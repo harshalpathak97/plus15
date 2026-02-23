@@ -1,0 +1,202 @@
+[
+  {
+    "id": "entry_west_amec",
+    "name": "West Entry - AMEC Place",
+    "lat": 51.0480,
+    "lng": -114.0770,
+    "buildingId": "amec_place",
+    "isAccessible": true,
+    "priority": 5,
+    "tags": ["west", "street", "office"]
+  },
+  {
+    "id": "entry_west_sandman",
+    "name": "West Entry - Sandman Hotel",
+    "lat": 51.0474,
+    "lng": -114.0772,
+    "buildingId": "sandman_hotel",
+    "isAccessible": true,
+    "priority": 4,
+    "tags": ["west", "hotel", "street"]
+  },
+  {
+    "id": "entry_nw_mcdougall",
+    "name": "Northwest Entry - McDougall Parkade",
+    "lat": 51.0497,
+    "lng": -114.0744,
+    "buildingId": "mcdougall_parkade",
+    "isAccessible": true,
+    "priority": 4,
+    "tags": ["northwest", "parking", "street"]
+  },
+  {
+    "id": "entry_north_millennium",
+    "name": "North Entry - Millennium Tower",
+    "lat": 51.0520,
+    "lng": -114.0684,
+    "buildingId": "millennium_tower",
+    "isAccessible": true,
+    "priority": 3,
+    "tags": ["north", "eau-claire", "street"]
+  },
+  {
+    "id": "entry_north_city_centre",
+    "name": "North Entry - Calgary City Centre",
+    "lat": 51.0514,
+    "lng": -114.0648,
+    "buildingId": "calgary_city_centre",
+    "isAccessible": true,
+    "priority": 2,
+    "tags": ["north", "core", "office"]
+  },
+  {
+    "id": "entry_ne_harry_hays",
+    "name": "Northeast Entry - Harry Hays",
+    "lat": 51.0504,
+    "lng": -114.0566,
+    "buildingId": "harry_hays",
+    "isAccessible": true,
+    "priority": 3,
+    "tags": ["northeast", "riverfront", "government"]
+  },
+  {
+    "id": "entry_ne_dragon_city",
+    "name": "Northeast Entry - Dragon City Mall",
+    "lat": 51.0500,
+    "lng": -114.0574,
+    "buildingId": "dragon_city_mall",
+    "isAccessible": true,
+    "priority": 3,
+    "tags": ["northeast", "mall", "street"]
+  },
+  {
+    "id": "entry_east_city_hall",
+    "name": "East Entry - City Hall",
+    "lat": 51.0468,
+    "lng": -114.0574,
+    "buildingId": "city_hall",
+    "isAccessible": true,
+    "priority": 1,
+    "tags": ["east", "transit", "government"]
+  },
+  {
+    "id": "entry_east_arts_commons",
+    "name": "East Entry - Arts Commons",
+    "lat": 51.0458,
+    "lng": -114.0578,
+    "buildingId": "arts_commons",
+    "isAccessible": true,
+    "priority": 2,
+    "tags": ["east", "arts", "street"]
+  },
+  {
+    "id": "entry_se_glenbow",
+    "name": "Southeast Entry - Glenbow Museum",
+    "lat": 51.0458,
+    "lng": -114.0588,
+    "buildingId": "glenbow_museum",
+    "isAccessible": true,
+    "priority": 2,
+    "tags": ["southeast", "museum", "street"]
+  },
+  {
+    "id": "entry_south_palliser",
+    "name": "South Entry - Palliser Square",
+    "lat": 51.0450,
+    "lng": -114.0592,
+    "buildingId": "palliser_square",
+    "isAccessible": true,
+    "priority": 2,
+    "tags": ["south", "shopping", "street"]
+  },
+  {
+    "id": "entry_south_tower",
+    "name": "South Entry - Calgary Tower",
+    "lat": 51.0454,
+    "lng": -114.0604,
+    "buildingId": "calgary_tower",
+    "isAccessible": true,
+    "priority": 2,
+    "tags": ["south", "landmark", "street"]
+  },
+  {
+    "id": "entry_south_tower_centre",
+    "name": "South Entry - Tower Centre",
+    "lat": 51.0450,
+    "lng": -114.0608,
+    "buildingId": "tower_centre",
+    "isAccessible": true,
+    "priority": 3,
+    "tags": ["south", "street", "office"]
+  },
+  {
+    "id": "entry_central_hyatt",
+    "name": "Central Entry - Hyatt Regency",
+    "lat": 51.0468,
+    "lng": -114.0600,
+    "buildingId": "hyatt_regency",
+    "isAccessible": true,
+    "priority": 1,
+    "tags": ["central", "hotel", "street"]
+  },
+  {
+    "id": "entry_central_core",
+    "name": "Central Entry - The CORE",
+    "lat": 51.0468,
+    "lng": -114.0670,
+    "buildingId": "the_core",
+    "isAccessible": true,
+    "priority": 1,
+    "tags": ["central", "shopping", "transit"]
+  },
+  {
+    "id": "entry_central_td",
+    "name": "Central Entry - TD Square",
+    "lat": 51.0468,
+    "lng": -114.0650,
+    "buildingId": "td_square",
+    "isAccessible": true,
+    "priority": 1,
+    "tags": ["central", "transit", "office"]
+  },
+  {
+    "id": "entry_sw_western_union",
+    "name": "Southwest Entry - Western Union",
+    "lat": 51.0466,
+    "lng": -114.0714,
+    "buildingId": "western_union",
+    "isAccessible": true,
+    "priority": 3,
+    "tags": ["southwest", "office", "street"]
+  },
+  {
+    "id": "entry_sw_first_alberta",
+    "name": "Southwest Entry - First Alberta Place",
+    "lat": 51.0462,
+    "lng": -114.0742,
+    "buildingId": "first_alberta_place",
+    "isAccessible": true,
+    "priority": 4,
+    "tags": ["southwest", "office", "street"]
+  },
+  {
+    "id": "entry_sw_801_seventh",
+    "name": "Southwest Entry - 801 Seventh",
+    "lat": 51.0470,
+    "lng": -114.0748,
+    "buildingId": "801_seventh",
+    "isAccessible": false,
+    "priority": 4,
+    "tags": ["southwest", "office", "street", "stairs"]
+  },
+  {
+    "id": "entry_south_centennial_parkade",
+    "name": "South Entry - Centennial Parkade",
+    "lat": 51.0458,
+    "lng": -114.0702,
+    "buildingId": "centennial_parkade",
+    "isAccessible": true,
+    "priority": 3,
+    "tags": ["south", "parking", "street"]
+  }
+]

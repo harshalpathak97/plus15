@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
+import 'package:latlong2/latlong.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/building.dart';
 import '../../data/models/saved_route.dart';
@@ -28,6 +29,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     final buildingsAsync = ref.watch(buildingsProvider);
     final from = ref.watch(routeFromProvider);
     final to = ref.watch(routeToProvider);
+    final walkingSpeed = ref.watch(walkingSpeedProvider);
 
     return Scaffold(
       body: SafeArea(
@@ -48,7 +50,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                   .animate()
                   .fadeIn(duration: 400.ms, delay: 100.ms),
               const SizedBox(height: 20),
-              _buildLocationSelector(context, buildings, true, from)
+              _buildLocationSelector(context, buildings, true, from,
+                      allowUseMyLocation: true)
                   .animate()
                   .fadeIn(duration: 400.ms, delay: 150.ms),
               const SizedBox(height: 10),
@@ -110,7 +113,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                           distance: _results![index].totalDistance,
                           bridges: _results![index].bridgeCount,
                           time: AppConstants.estimateWalkTimeMinutes(
-                              _results![index].totalDistance),
+                            _results![index].totalDistance,
+                            speedKmh: walkingSpeed,
+                          ),
                           isAccessible: _results![index].fullyAccessible,
                           isSelected: _selectedIndex == index,
                           onTap: () => setState(() => _selectedIndex = index),
@@ -152,8 +157,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: _saveRoute,
-                        icon:
-                            const Icon(Icons.bookmark_add_outlined, size: 18),
+                        icon: const Icon(Icons.bookmark_add_outlined, size: 18),
                         label: const Text('Save'),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -173,8 +177,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                     child: Column(
                       children: [
                         Icon(Icons.route,
-                            size: 56,
-                            color: theme.textTheme.bodySmall?.color),
+                            size: 56, color: theme.textTheme.bodySmall?.color),
                         const SizedBox(height: 12),
                         Text('No route found',
                             style: theme.textTheme.titleMedium),
@@ -192,8 +195,13 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     );
   }
 
-  Widget _buildLocationSelector(BuildContext context, List<Building> buildings,
-      bool isFrom, Building? selected) {
+  Widget _buildLocationSelector(
+    BuildContext context,
+    List<Building> buildings,
+    bool isFrom,
+    Building? selected, {
+    bool allowUseMyLocation = false,
+  }) {
     final theme = Theme.of(context);
     return InkWell(
       onTap: () => _showBuildingPicker(context, buildings, isFrom),
@@ -209,18 +217,16 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: (isFrom
-                        ? const Color(0xFF22C55E)
-                        : const Color(0xFFEF4444))
-                    .withValues(alpha: 0.1),
+                color:
+                    (isFrom ? const Color(0xFF22C55E) : const Color(0xFFEF4444))
+                        .withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 isFrom ? Icons.trip_origin : Icons.location_on,
                 size: 16,
-                color: isFrom
-                    ? const Color(0xFF22C55E)
-                    : const Color(0xFFEF4444),
+                color:
+                    isFrom ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
               ),
             ),
             const SizedBox(width: 12),
@@ -229,11 +235,35 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                 selected?.name ??
                     (isFrom ? 'Choose starting point' : 'Choose destination'),
                 style: theme.textTheme.bodyLarge?.copyWith(
-                  color:
-                      selected != null ? null : theme.textTheme.bodySmall?.color,
+                  color: selected != null
+                      ? null
+                      : theme.textTheme.bodySmall?.color,
                 ),
               ),
             ),
+            if (allowUseMyLocation)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: InkWell(
+                  onTap: () => _useMyLocationAsStart(buildings),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Use my location',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             Icon(Icons.chevron_right,
                 size: 20, color: theme.textTheme.bodySmall?.color),
           ],
@@ -306,9 +336,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                   : null,
                               onTap: () {
                                 if (isFrom) {
-                                  ref
-                                      .read(routeFromProvider.notifier)
-                                      .state = b;
+                                  ref.read(routeFromProvider.notifier).state =
+                                      b;
                                 } else {
                                   ref.read(routeToProvider.notifier).state = b;
                                 }
@@ -343,10 +372,53 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     if (_results == null || _results!.isEmpty) return;
     HapticFeedback.mediumImpact();
     final selected = _results![_selectedIndex];
+    final to = ref.read(routeToProvider);
+    final modes = ['fastest', 'accessible', 'explorer'];
     ref.read(activeRouteProvider.notifier).state = selected.path;
     ref.read(activeRouteDistanceProvider.notifier).state =
         selected.totalDistance;
+    if (to != null) {
+      ref.read(navigationSessionProvider.notifier).start(
+            destinationId: to.id,
+            mode: modes[_selectedIndex],
+            routePath: selected.path,
+            totalDistanceM: selected.totalDistance,
+          );
+    }
     context.go('/map');
+  }
+
+  Future<void> _useMyLocationAsStart(List<Building> buildings) async {
+    final loc = await ref.read(locationStreamProvider.future);
+    if (loc == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Location unavailable. Choose a starting building.'),
+        ),
+      );
+      return;
+    }
+
+    Building? nearest;
+    var bestDistance = double.infinity;
+    for (final building in buildings) {
+      final d = _distanceM(loc, LatLng(building.lat, building.lng));
+      if (d < bestDistance) {
+        bestDistance = d;
+        nearest = building;
+      }
+    }
+
+    if (nearest != null) {
+      ref.read(routeFromProvider.notifier).state = nearest;
+      setState(() => _results = null);
+    }
+  }
+
+  double _distanceM(LatLng from, LatLng to) {
+    const meter = Distance();
+    return meter(from, to);
   }
 
   void _saveRoute() {
@@ -365,8 +437,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
       builder: (ctx) {
         return StatefulBuilder(builder: (ctx, setDialogState) {
           return AlertDialog(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: const Text('Save Route'),
             content: Column(
               mainAxisSize: MainAxisSize.min,

@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,7 +9,10 @@ import 'package:latlong2/latlong.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/building.dart';
 import '../../data/models/bridge.dart';
+import '../../data/models/entry_point.dart';
 import '../../shared/providers/providers.dart';
+import 'services/course_tracker.dart';
+import 'services/map_alignment_service.dart';
 import 'widgets/building_tooltip.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
@@ -21,21 +25,38 @@ class MapScreen extends ConsumerStatefulWidget {
 class _MapScreenState extends ConsumerState<MapScreen>
     with TickerProviderStateMixin {
   final MapController _mapController = MapController();
+  final MapAlignmentService _mapAlignmentService = const MapAlignmentService();
+
   static const _calgaryCenter = LatLng(51.0478, -114.0670);
+  static const _plus15Center = LatLng(51.0478, -114.0670);
+  static final _calgaryBounds = LatLngBounds(
+    const LatLng(50.88, -114.30),
+    const LatLng(51.20, -113.85),
+  );
   static const _defaultZoom = 15.5;
+
   double _currentZoom = _defaultZoom;
   bool _mapReady = false;
+  int _offRouteStrikes = 0;
+  DateTime? _lastRerouteAt;
+  LatLng? _smoothedUserLocation;
+  LatLng? _lastRawLocation;
+  double? _headingRadians;
+  EntryPoint? _guidanceEntryPoint;
+  double? _guidanceEntryDistanceM;
 
-  static const _importantTypes = {'hotel', 'retail', 'landmark', 'convention', 'entertainment'};
-  static const _importantAmenities = {'transit', 'food'};
+  static const _importantTypes = {
+    'hotel',
+    'retail',
+    'landmark',
+    'convention',
+    'entertainment'
+  };
+  static const _importantAmenities = {'transit'};
+  static const Distance _distance = Distance();
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(userLocationProvider.notifier).fetchLocation();
-    });
-  }
+  void initState() => super.initState();
 
   bool _isBuildingImportant(Building b) {
     if (_importantTypes.contains(b.type)) return true;
@@ -92,14 +113,31 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<LatLng?>>(locationStreamProvider, (previous, next) {
+      next.whenData((pos) {
+        if (pos != null) {
+          _handleLocationUpdate(pos);
+        }
+      });
+    });
+
     final buildingsAsync = ref.watch(buildingsProvider);
     final bridgesAsync = ref.watch(bridgesProvider);
     final shopsAsync = ref.watch(shopsProvider);
+    final overlayConfigAsync = ref.watch(overlayConfigProvider);
     final selectedBuilding = ref.watch(selectedBuildingProvider);
     final activeRoute = ref.watch(activeRouteProvider);
     final activeRouteDist = ref.watch(activeRouteDistanceProvider);
-    final userLocation = ref.watch(userLocationProvider);
+    final navigationSession = ref.watch(navigationSessionProvider);
+    final walkingSpeed = ref.watch(walkingSpeedProvider);
+    final userLocation = ref.watch(locationStreamProvider);
+    final displayUserLocation =
+        _smoothedUserLocation ?? userLocation.valueOrNull;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final overlayConfig = overlayConfigAsync.valueOrNull;
+    final overlayAlignment = overlayConfig == null
+        ? null
+        : _mapAlignmentService.compute(overlayConfig);
 
     return Scaffold(
       body: buildingsAsync.when(
@@ -119,17 +157,17 @@ class _MapScreenState extends ConsumerState<MapScreen>
                   options: MapOptions(
                     initialCenter: _calgaryCenter,
                     initialZoom: _defaultZoom,
-                    minZoom: 13,
+                    minZoom: 10,
                     maxZoom: 18,
+                    cameraConstraint:
+                        CameraConstraint.contain(bounds: _calgaryBounds),
                     onMapReady: () {
                       _mapReady = true;
-                      final loc = ref.read(userLocationProvider);
-                      loc.whenData((pos) {
-                        if (pos != null &&
-                            _isInCalgaryBounds(pos.latitude, pos.longitude)) {
-                          _animatedMove(pos, 16.0);
-                        }
-                      });
+                      final loc = displayUserLocation;
+                      if (loc != null &&
+                          _isInCalgaryBounds(loc.latitude, loc.longitude)) {
+                        _animatedMove(loc, 16.0);
+                      }
                     },
                     onPositionChanged: (pos, _) {
                       if (pos.zoom != _currentZoom) {
@@ -153,8 +191,24 @@ class _MapScreenState extends ConsumerState<MapScreen>
                       userAgentPackageName: 'com.plus15.navigator',
                       maxZoom: 20,
                       tileDisplay: const TileDisplay.fadeIn(),
-                      fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      fallbackUrl:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     ),
+                    if (overlayConfig != null && overlayAlignment != null)
+                      OverlayImageLayer(
+                        overlayImages: [
+                          RotatedOverlayImage(
+                            imageProvider: AssetImage(overlayConfig.imageAsset),
+                            topLeftCorner: overlayAlignment.topLeft,
+                            bottomLeftCorner: overlayAlignment.bottomLeft,
+                            bottomRightCorner: overlayAlignment.bottomRight,
+                            opacity: isDark
+                                ? overlayConfig.opacityDark
+                                : overlayConfig.opacityLight,
+                            filterQuality: FilterQuality.high,
+                          ),
+                        ],
+                      ),
                     PolylineLayer(
                       polylines: _buildBridgeLines(
                           bridges, buildingMap, activeRoute, isDark),
@@ -162,6 +216,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     if (activeRoute != null && activeRoute.length > 1)
                       PolylineLayer(
                         polylines: [
+                          _buildRouteGlowPolyline(activeRoute, buildingMap),
                           _buildRoutePolyline(activeRoute, buildingMap)
                         ],
                       ),
@@ -174,13 +229,12 @@ class _MapScreenState extends ConsumerState<MapScreen>
                       MarkerLayer(
                         markers: _buildRouteEndpoints(activeRoute, buildingMap),
                       ),
-                    userLocation.when(
-                      data: (pos) => pos != null
-                          ? MarkerLayer(markers: [_buildUserLocationMarker(pos)])
-                          : const MarkerLayer(markers: []),
-                      loading: () => const MarkerLayer(markers: []),
-                      error: (_, __) => const MarkerLayer(markers: []),
-                    ),
+                    if (displayUserLocation != null)
+                      MarkerLayer(
+                        markers: [
+                          _buildUserLocationMarker(displayUserLocation)
+                        ],
+                      ),
                   ],
                 ),
                 Positioned(
@@ -192,15 +246,36 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 Positioned(
                   right: 16,
                   bottom: selectedBuilding != null
-                      ? 290
-                      : (activeRoute != null ? 110 : 24),
+                      ? 300
+                      : (activeRoute != null ? 116 : 24),
                   child: _buildMapControls(context, isDark, userLocation),
                 ),
+                if (navigationSession.isActive)
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + 84,
+                    left: 16,
+                    right: 16,
+                    child: _buildNavigationStatusCard(
+                      context,
+                      navigationSession,
+                      buildingMap,
+                    ),
+                  ),
                 if (_hasRoutineRoutes())
                   Positioned(
                     left: 16,
                     bottom: activeRoute != null ? 110 : 24,
                     child: _buildQuickRoutes(context, buildings),
+                  ),
+                if (navigationSession.status ==
+                        NavigationStatus.headingToEntry &&
+                    _guidanceEntryPoint != null &&
+                    _guidanceEntryDistanceM != null)
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: activeRoute != null ? 118 : 26,
+                    child: _buildEntryGuidanceChip(context),
                   ),
                 if (activeRoute != null)
                   Positioned(
@@ -208,7 +283,14 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     right: 16,
                     bottom: 24,
                     child: _buildRouteBar(
-                        context, activeRouteDist, buildings, activeRoute),
+                      context,
+                      navigationSession.isActive
+                          ? navigationSession.remainingDistanceM
+                          : activeRouteDist,
+                      buildings,
+                      activeRoute,
+                      walkingSpeed,
+                    ),
                   ),
                 if (selectedBuilding != null)
                   Positioned(
@@ -249,10 +331,201 @@ class _MapScreenState extends ConsumerState<MapScreen>
   Marker _buildUserLocationMarker(LatLng pos) {
     return Marker(
       point: pos,
-      width: 28,
-      height: 28,
-      child: const _PulsingLocationDot(),
+      width: 40,
+      height: 40,
+      child: _PulsingLocationDot(headingRadians: _headingRadians),
     );
+  }
+
+  Future<void> _handleLocationUpdate(LatLng rawPosition) async {
+    const distance = Distance();
+    if (_lastRawLocation != null) {
+      final moved = distance(_lastRawLocation!, rawPosition);
+      if (moved >= 2) {
+        _headingRadians = _bearingRadians(_lastRawLocation!, rawPosition);
+      }
+    }
+    _lastRawLocation = rawPosition;
+
+    final prev = _smoothedUserLocation;
+    if (prev == null) {
+      _smoothedUserLocation = rawPosition;
+    } else {
+      _smoothedUserLocation = LatLng(
+        (prev.latitude * 0.78) + (rawPosition.latitude * 0.22),
+        (prev.longitude * 0.78) + (rawPosition.longitude * 0.22),
+      );
+    }
+
+    if (_guidanceEntryPoint != null && _smoothedUserLocation != null) {
+      _guidanceEntryDistanceM = distance(
+        _smoothedUserLocation!,
+        LatLng(_guidanceEntryPoint!.lat, _guidanceEntryPoint!.lng),
+      );
+    }
+
+    if (mounted) setState(() {});
+
+    final session = ref.read(navigationSessionProvider);
+    if (_mapReady && session.isActive && _smoothedUserLocation != null) {
+      final centerDistance =
+          distance(_mapController.camera.center, _smoothedUserLocation!);
+      if (centerDistance > 180) {
+        _animatedMove(
+          _smoothedUserLocation!,
+          _mapController.camera.zoom.clamp(15.2, 17.0),
+        );
+      }
+    }
+
+    await _updateNavigationFromLocation(rawPosition);
+  }
+
+  Future<void> _updateNavigationFromLocation(LatLng user) async {
+    final session = ref.read(navigationSessionProvider);
+    final route = ref.read(activeRouteProvider);
+    if (!session.isActive ||
+        session.destinationId == null ||
+        route == null ||
+        route.length < 2) {
+      return;
+    }
+
+    final buildings = await ref.read(buildingsProvider.future);
+    final bridges = await ref.read(bridgesProvider.future);
+    final graph = await ref.read(graphProvider.future);
+    final pathfinder = await ref.read(pathfinderProvider.future);
+    final entryPoints = await ref.read(entryPointsProvider.future);
+    final buildingMap = {for (final b in buildings) b.id: b};
+    final tracker = CourseTracker(graph: graph, buildingMap: buildingMap);
+
+    final liveSession = ref.read(navigationSessionProvider);
+    if (!liveSession.isActive || liveSession.destinationId == null) return;
+    final destinationId = liveSession.destinationId!;
+    final onRoute = tracker.isOnRoute(user, route, thresholdM: 20);
+
+    if (onRoute) {
+      _offRouteStrikes = 0;
+      final nearestNode = tracker.nearestRouteNode(user, route);
+      final progress = nearestNode == null
+          ? const RouteProgress(
+              traveledM: 0,
+              remainingM: 0,
+              progress: 0,
+              nextNodeId: null,
+            )
+          : tracker.computeProgress(route, nearestNode);
+
+      final arrived = nearestNode == destinationId || progress.remainingM <= 25;
+
+      ref.read(navigationSessionProvider.notifier).update(
+            liveSession.copyWith(
+              status: arrived
+                  ? NavigationStatus.arrived
+                  : NavigationStatus.onCourse,
+              routePath: route,
+              remainingDistanceM: arrived ? 0 : progress.remainingM,
+              totalDistanceM: liveSession.totalDistanceM > 0
+                  ? liveSession.totalDistanceM
+                  : (progress.traveledM + progress.remainingM),
+              nextNodeId: progress.nextNodeId,
+              confidence: 0.95,
+              offRouteStrikes: 0,
+            ),
+          );
+      _guidanceEntryPoint = null;
+      _guidanceEntryDistanceM = null;
+      return;
+    }
+
+    _offRouteStrikes += 1;
+    ref.read(navigationSessionProvider.notifier).update(
+          liveSession.copyWith(
+            status: NavigationStatus.rerouting,
+            confidence: 0.45,
+            offRouteStrikes: _offRouteStrikes,
+          ),
+        );
+
+    if (_offRouteStrikes < 2) return;
+    if (_lastRerouteAt != null &&
+        DateTime.now().difference(_lastRerouteAt!) <
+            const Duration(seconds: 4)) {
+      return;
+    }
+    _lastRerouteAt = DateTime.now();
+
+    final accessibility = ref.read(accessibilityModeProvider);
+    final routeMode = accessibility ? 'accessible' : liveSession.mode;
+
+    if (tracker.isNearNetwork(user, bridges, thresholdM: 60)) {
+      final startNode = tracker.nearestGraphNode(user);
+      if (startNode != null) {
+        final reroute =
+            pathfinder.findRoute(startNode, destinationId, mode: routeMode);
+        if (reroute != null && reroute.path.length > 1) {
+          ref.read(activeRouteProvider.notifier).state = reroute.path;
+          ref.read(activeRouteDistanceProvider.notifier).state =
+              reroute.totalDistance;
+          ref.read(navigationSessionProvider.notifier).update(
+                liveSession.copyWith(
+                  status: NavigationStatus.rerouting,
+                  routePath: reroute.path,
+                  totalDistanceM: reroute.totalDistance,
+                  remainingDistanceM: reroute.totalDistance,
+                  confidence: 0.78,
+                  offRouteStrikes: 0,
+                  clearEntryPoint: true,
+                ),
+              );
+          _offRouteStrikes = 0;
+          _guidanceEntryPoint = null;
+          _guidanceEntryDistanceM = null;
+          if (mounted) setState(() {});
+          return;
+        }
+      }
+    }
+
+    final choice = tracker.chooseBestEntryPoint(
+      user: user,
+      entryPoints: entryPoints,
+      destinationId: destinationId,
+      pathfinder: pathfinder,
+      accessibilityMode: accessibility,
+      mode: routeMode,
+    );
+    if (choice != null) {
+      _guidanceEntryPoint = choice.entryPoint;
+      _guidanceEntryDistanceM = choice.userToEntryM;
+
+      ref.read(activeRouteProvider.notifier).state = choice.route.path;
+      ref.read(activeRouteDistanceProvider.notifier).state =
+          choice.route.totalDistance;
+      ref.read(navigationSessionProvider.notifier).update(
+            liveSession.copyWith(
+              status: NavigationStatus.headingToEntry,
+              entryPointId: choice.entryPoint.id,
+              routePath: choice.route.path,
+              totalDistanceM: choice.route.totalDistance,
+              remainingDistanceM: choice.route.totalDistance,
+              confidence: 0.85,
+              offRouteStrikes: 0,
+            ),
+          );
+      _offRouteStrikes = 0;
+      if (mounted) setState(() {});
+    }
+  }
+
+  double _bearingRadians(LatLng from, LatLng to) {
+    const degToRad = pi / 180.0;
+    final lat1 = from.latitude * degToRad;
+    final lat2 = to.latitude * degToRad;
+    final dLon = (to.longitude - from.longitude) * degToRad;
+    final y = sin(dLon) * cos(lat2);
+    final x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
+    return atan2(y, x);
   }
 
   List<Polyline> _buildBridgeLines(List<Bridge> bridges,
@@ -282,11 +555,29 @@ class _MapScreenState extends ConsumerState<MapScreen>
         color = const Color(0xFFF59E0B).withValues(alpha: 0.45);
         width = veryZoomed ? 2.5 : 1.5;
       } else if (isDark) {
-        color = const Color(0xFF38BDF8).withValues(alpha: veryZoomed ? 0.35 : zoomedIn ? 0.25 : 0.18);
-        width = veryZoomed ? 3.0 : zoomedIn ? 2.0 : 1.5;
+        color = const Color(0xFF38BDF8).withValues(
+            alpha: veryZoomed
+                ? 0.35
+                : zoomedIn
+                    ? 0.25
+                    : 0.18);
+        width = veryZoomed
+            ? 3.0
+            : zoomedIn
+                ? 2.0
+                : 1.5;
       } else {
-        color = const Color(0xFF3B82F6).withValues(alpha: veryZoomed ? 0.35 : zoomedIn ? 0.25 : 0.2);
-        width = veryZoomed ? 3.0 : zoomedIn ? 2.0 : 1.5;
+        color = const Color(0xFF3B82F6).withValues(
+            alpha: veryZoomed
+                ? 0.35
+                : zoomedIn
+                    ? 0.25
+                    : 0.2);
+        width = veryZoomed
+            ? 3.0
+            : zoomedIn
+                ? 2.0
+                : 1.5;
       }
 
       return Polyline(
@@ -297,8 +588,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     }).toList();
   }
 
-  Polyline _buildRoutePolyline(
-      List<String> route, Map<String, Building> bMap) {
+  Polyline _buildRoutePolyline(List<String> route, Map<String, Building> bMap) {
     final points = route
         .where((id) => bMap.containsKey(id))
         .map((id) => LatLng(bMap[id]!.lat, bMap[id]!.lng))
@@ -310,6 +600,21 @@ class _MapScreenState extends ConsumerState<MapScreen>
       color: const Color(0xFF3B82F6),
       borderStrokeWidth: 2,
       borderColor: const Color(0xFF3B82F6).withValues(alpha: 0.25),
+    );
+  }
+
+  Polyline _buildRouteGlowPolyline(
+      List<String> route, Map<String, Building> bMap) {
+    final points = route
+        .where((id) => bMap.containsKey(id))
+        .map((id) => LatLng(bMap[id]!.lat, bMap[id]!.lng))
+        .toList();
+
+    return Polyline(
+      points: points,
+      strokeWidth: 10,
+      color: const Color(0xFF22D3EE).withValues(alpha: 0.28),
+      borderStrokeWidth: 0,
     );
   }
 
@@ -368,15 +673,16 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
   List<Marker> _buildMarkers(List<Building> buildings, Building? selected,
       List<String>? activeRoute, bool isDark) {
-    final showChips = _currentZoom >= 15.5;
+    final showChips = _currentZoom >= 16.1;
     final routeBuildings = activeRoute?.toSet() ?? {};
+    final declutteredChipIds = showChips
+        ? _declutteredChipIds(buildings, selected, routeBuildings)
+        : const <String>{};
 
-    final onRouteBuildings = buildings
-        .where((b) => routeBuildings.contains(b.id))
-        .toList();
-    final nonRouteBuildings = buildings
-        .where((b) => !routeBuildings.contains(b.id))
-        .toList();
+    final onRouteBuildings =
+        buildings.where((b) => routeBuildings.contains(b.id)).toList();
+    final nonRouteBuildings =
+        buildings.where((b) => !routeBuildings.contains(b.id)).toList();
 
     final allVisible = [...nonRouteBuildings, ...onRouteBuildings];
 
@@ -384,17 +690,19 @@ class _MapScreenState extends ConsumerState<MapScreen>
       final isSelected = b.id == selected?.id;
       final isOnRoute = routeBuildings.contains(b.id);
 
-      if (showChips || isSelected || isOnRoute) {
+      final shouldShowChip =
+          isSelected || isOnRoute || declutteredChipIds.contains(b.id);
+
+      if (shouldShowChip) {
         return Marker(
           point: LatLng(b.lat, b.lng),
-          width: isSelected ? 160 : 130,
+          width: isSelected ? 150 : 120,
           height: isSelected ? 40 : 32,
           child: GestureDetector(
             onTap: () {
               HapticFeedback.lightImpact();
               ref.read(selectedBuildingProvider.notifier).state = b;
-              _animatedMove(
-                  LatLng(b.lat, b.lng), _mapController.camera.zoom);
+              _animatedMove(LatLng(b.lat, b.lng), _mapController.camera.zoom);
             },
             child: _BuildingChip(
               name: b.name,
@@ -429,6 +737,75 @@ class _MapScreenState extends ConsumerState<MapScreen>
     }).toList();
   }
 
+  Set<String> _declutteredChipIds(List<Building> buildings, Building? selected,
+      Set<String> routeBuildings) {
+    if (buildings.isEmpty) return const <String>{};
+
+    final spacingMeters = _chipSpacingMeters();
+    final maxChips = _maxChipCount();
+    final selectedId = selected?.id;
+    final buildingMap = {for (final b in buildings) b.id: b};
+
+    final occupied = <LatLng>[];
+    if (selectedId != null) {
+      final selectedBuilding = buildingMap[selectedId];
+      if (selectedBuilding != null) {
+        occupied.add(LatLng(selectedBuilding.lat, selectedBuilding.lng));
+      }
+    }
+    for (final id in routeBuildings) {
+      final routeBuilding = buildingMap[id];
+      if (routeBuilding != null) {
+        occupied.add(LatLng(routeBuilding.lat, routeBuilding.lng));
+      }
+    }
+
+    final candidates = [...buildings]..sort((a, b) {
+        final score = _chipPriority(b).compareTo(_chipPriority(a));
+        if (score != 0) return score;
+        return a.name.compareTo(b.name);
+      });
+
+    final chosen = <String>{};
+    for (final building in candidates) {
+      if (building.id == selectedId || routeBuildings.contains(building.id)) {
+        continue;
+      }
+      if (chosen.length >= maxChips) break;
+
+      final point = LatLng(building.lat, building.lng);
+      final overlaps = occupied.any((existing) =>
+          _distance.as(LengthUnit.Meter, existing, point) < spacingMeters);
+      if (overlaps) continue;
+
+      chosen.add(building.id);
+      occupied.add(point);
+    }
+
+    return chosen;
+  }
+
+  int _chipPriority(Building b) {
+    var score = 0;
+    if (_importantTypes.contains(b.type)) score += 4;
+    if (b.amenities.contains('transit')) score += 3;
+    if (b.amenities.contains('food')) score += 1;
+    if (b.type == 'office') score -= 1;
+    return score;
+  }
+
+  double _chipSpacingMeters() {
+    if (_currentZoom >= 17.0) return 70;
+    if (_currentZoom >= 16.5) return 95;
+    return 120;
+  }
+
+  int _maxChipCount() {
+    if (_currentZoom >= 17.0) return 30;
+    if (_currentZoom >= 16.5) return 22;
+    return 16;
+  }
+
   bool _isEdgeOnRoute(String fromId, String toId, List<String> route) {
     for (int i = 0; i < route.length - 1; i++) {
       if ((route[i] == fromId && route[i + 1] == toId) ||
@@ -448,8 +825,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
             .withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color:
-              isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFE2E8F0),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : const Color(0xFFE2E8F0),
         ),
         boxShadow: [
           BoxShadow(
@@ -525,6 +903,167 @@ class _MapScreenState extends ConsumerState<MapScreen>
     );
   }
 
+  Widget _buildNavigationStatusCard(BuildContext context,
+      NavigationSession session, Map<String, Building> buildingMap) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final nextName = session.nextNodeId == null
+        ? null
+        : buildingMap[session.nextNodeId!]?.name ?? session.nextNodeId;
+    final destinationName = session.destinationId == null
+        ? null
+        : buildingMap[session.destinationId!]?.name ?? session.destinationId;
+    final total = session.totalDistanceM <= 0 ? 1.0 : session.totalDistanceM;
+    final progress = (1 - (session.remainingDistanceM / total)).clamp(0.0, 1.0);
+
+    String statusText;
+    switch (session.status) {
+      case NavigationStatus.headingToEntry:
+        statusText = 'Heading to nearest entry';
+        break;
+      case NavigationStatus.rerouting:
+        statusText = 'Re-routing on +15 network';
+        break;
+      case NavigationStatus.arrived:
+        statusText = 'Arrived at destination';
+        break;
+      case NavigationStatus.onCourse:
+        statusText = 'On course';
+        break;
+      case NavigationStatus.inactive:
+        statusText = 'Navigation inactive';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: (isDark ? const Color(0xFF111827) : Colors.white)
+            .withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.black.withValues(alpha: 0.06),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: session.status == NavigationStatus.arrived
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFF3B82F6),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  statusText,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              Text(
+                '${(session.confidence * 100).round()}% conf',
+                style: TextStyle(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.62)
+                      : const Color(0xFF64748B),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: progress,
+            minHeight: 7,
+            borderRadius: BorderRadius.circular(8),
+            backgroundColor: isDark
+                ? Colors.white.withValues(alpha: 0.12)
+                : const Color(0xFFE2E8F0),
+            valueColor: const AlwaysStoppedAnimation(Color(0xFF3B82F6)),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            nextName == null
+                ? (destinationName ?? 'Destination')
+                : 'Next: $nextName',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.82)
+                  : const Color(0xFF334155),
+            ),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: 260.ms).slideY(begin: -0.06, end: 0);
+  }
+
+  Widget _buildEntryGuidanceChip(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final entry = _guidanceEntryPoint!;
+    final distanceM = (_guidanceEntryDistanceM ?? 0).round();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: (isDark ? const Color(0xFF111827) : Colors.white)
+            .withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.black.withValues(alpha: 0.06),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.login_rounded, color: Color(0xFF22C55E), size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Nearest entry: ${entry.name} ($distanceM m)',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: 220.ms).slideY(begin: 0.08, end: 0);
+  }
+
   Widget _buildMapControls(
       BuildContext context, bool isDark, AsyncValue<LatLng?> userLocation) {
     return Column(
@@ -532,26 +1071,27 @@ class _MapScreenState extends ConsumerState<MapScreen>
       children: [
         _controlBtn(Icons.add_rounded, () {
           final z = _mapController.camera.zoom;
-          _animatedMove(_mapController.camera.center, (z + 0.5).clamp(13, 18));
+          _animatedMove(_mapController.camera.center, (z + 0.5).clamp(10, 18));
         }, isDark),
         const SizedBox(height: 8),
         _controlBtn(Icons.remove_rounded, () {
           final z = _mapController.camera.zoom;
-          _animatedMove(_mapController.camera.center, (z - 0.5).clamp(13, 18));
+          _animatedMove(_mapController.camera.center, (z - 0.5).clamp(10, 18));
         }, isDark),
         const SizedBox(height: 14),
+        _controlBtn(Icons.location_city_rounded, () {
+          _animatedMove(_plus15Center, 15.8);
+        }, isDark),
+        const SizedBox(height: 8),
         _controlBtn(
           Icons.my_location_rounded,
           () {
-            final loc = ref.read(userLocationProvider);
-            loc.whenData((pos) {
-              if (pos != null) {
-                _animatedMove(pos, 16.5);
-              } else {
-                ref.read(userLocationProvider.notifier).fetchLocation();
-                _animatedMove(_calgaryCenter, _defaultZoom);
-              }
-            });
+            final pos = _smoothedUserLocation ?? userLocation.valueOrNull;
+            if (pos != null) {
+              _animatedMove(pos, 16.5);
+            } else {
+              _animatedMove(_calgaryCenter, _defaultZoom);
+            }
           },
           isDark,
           accent: true,
@@ -674,14 +1214,23 @@ class _MapScreenState extends ConsumerState<MapScreen>
       ref.read(activeRouteProvider.notifier).state = result.path;
       ref.read(activeRouteDistanceProvider.notifier).state =
           result.totalDistance;
+      ref.read(navigationSessionProvider.notifier).start(
+            destinationId: toId,
+            mode: mode,
+            routePath: result.path,
+            totalDistanceM: result.totalDistance,
+          );
+      _guidanceEntryPoint = null;
+      _guidanceEntryDistanceM = null;
     }
   }
 
   Widget _buildRouteBar(BuildContext context, double distance,
-      List<Building> buildings, List<String> route) {
+      List<Building> buildings, List<String> route, double walkingSpeedKmh) {
     final fromBldg = buildings.where((b) => b.id == route.first).firstOrNull;
     final toBldg = buildings.where((b) => b.id == route.last).firstOrNull;
-    final timeMin = AppConstants.estimateWalkTimeMinutes(distance);
+    final timeMin = AppConstants.estimateWalkTimeMinutes(distance,
+        speedKmh: walkingSpeedKmh);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -708,8 +1257,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
               color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(10),
             ),
-            child:
-                const Icon(Icons.navigation_rounded, color: Colors.white, size: 20),
+            child: const Icon(Icons.navigation_rounded,
+                color: Colors.white, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -743,6 +1292,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
               onTap: () {
                 ref.read(activeRouteProvider.notifier).state = null;
                 ref.read(activeRouteDistanceProvider.notifier).state = 0;
+                ref.read(navigationSessionProvider.notifier).stop();
+                _guidanceEntryPoint = null;
+                _guidanceEntryDistanceM = null;
+                _offRouteStrikes = 0;
               },
               borderRadius: BorderRadius.circular(10),
               child: const SizedBox(
@@ -754,15 +1307,15 @@ class _MapScreenState extends ConsumerState<MapScreen>
           ),
         ],
       ),
-    )
-        .animate()
-        .fadeIn(duration: 300.ms)
-        .slideY(begin: 0.3, end: 0, duration: 300.ms, curve: Curves.easeOutCubic);
+    ).animate().fadeIn(duration: 300.ms).slideY(
+        begin: 0.3, end: 0, duration: 300.ms, curve: Curves.easeOutCubic);
   }
 }
 
 class _PulsingLocationDot extends StatefulWidget {
-  const _PulsingLocationDot();
+  final double? headingRadians;
+
+  const _PulsingLocationDot({this.headingRadians});
 
   @override
   State<_PulsingLocationDot> createState() => _PulsingLocationDotState();
@@ -821,6 +1374,15 @@ class _PulsingLocationDotState extends State<_PulsingLocationDot>
                 ],
               ),
             ),
+            if (widget.headingRadians != null)
+              Transform.rotate(
+                angle: widget.headingRadians!,
+                child: const Icon(
+                  Icons.navigation_rounded,
+                  size: 12,
+                  color: Colors.white,
+                ),
+              ),
           ],
         );
       },
@@ -952,8 +1514,7 @@ class _BuildingChip extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 4),
                 child: Icon(Icons.hotel_rounded,
                     size: 11,
-                    color:
-                        isSelected ? Colors.white : const Color(0xFFF59E0B)),
+                    color: isSelected ? Colors.white : const Color(0xFFF59E0B)),
               ),
             if (type == 'retail' || type == 'entertainment')
               Padding(
@@ -963,24 +1524,21 @@ class _BuildingChip extends StatelessWidget {
                         ? Icons.theaters_rounded
                         : Icons.shopping_bag_rounded,
                     size: 11,
-                    color:
-                        isSelected ? Colors.white : const Color(0xFF8B5CF6)),
+                    color: isSelected ? Colors.white : const Color(0xFF8B5CF6)),
               ),
             if (hasTransit)
               Padding(
                 padding: const EdgeInsets.only(right: 4),
                 child: Icon(Icons.train_rounded,
                     size: 11,
-                    color:
-                        isSelected ? Colors.white : const Color(0xFF10B981)),
+                    color: isSelected ? Colors.white : const Color(0xFF10B981)),
               ),
             if (type == 'landmark')
               Padding(
                 padding: const EdgeInsets.only(right: 4),
                 child: Icon(Icons.star_rounded,
                     size: 11,
-                    color:
-                        isSelected ? Colors.white : const Color(0xFFF59E0B)),
+                    color: isSelected ? Colors.white : const Color(0xFFF59E0B)),
               ),
             Flexible(
               child: Text(

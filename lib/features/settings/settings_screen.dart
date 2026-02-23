@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../shared/providers/providers.dart';
-import '../../data/datasources/local_storage.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -11,8 +10,8 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final themeMode = ref.watch(themeModeProvider);
-    final storage = ref.read(localStorageProvider);
-    final accessibilityMode = storage.getAccessibilityMode();
+    final accessibilityMode = ref.watch(accessibilityModeProvider);
+    final walkingSpeed = ref.watch(walkingSpeedProvider);
 
     return Scaffold(
       body: SafeArea(
@@ -38,12 +37,11 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: 24),
             _buildSectionTitle(context, 'Navigation Preferences'),
             const SizedBox(height: 8),
-            _buildAccessibilityToggle(
-                    context, ref, storage, accessibilityMode)
+            _buildAccessibilityToggle(context, ref, accessibilityMode)
                 .animate()
                 .fadeIn(duration: 400.ms, delay: 200.ms),
             const SizedBox(height: 8),
-            _buildWalkingSpeedSlider(context, ref, storage)
+            _buildWalkingSpeedSlider(context, ref, walkingSpeed)
                 .animate()
                 .fadeIn(duration: 400.ms, delay: 250.ms),
             const SizedBox(height: 24),
@@ -61,7 +59,8 @@ class SettingsScreen extends ConsumerWidget {
                       style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.textTheme.bodySmall?.color
                               ?.withValues(alpha: 0.6))),
-                  const Icon(Icons.favorite, size: 14, color: Color(0xFFEF4444)),
+                  const Icon(Icons.favorite,
+                      size: 14, color: Color(0xFFEF4444)),
                   Text(' by Harshal',
                       style: theme.textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.w600,
@@ -96,8 +95,8 @@ class SettingsScreen extends ConsumerWidget {
                 Icons.brightness_auto, 'System'),
             _buildThemeOption(context, ref, ThemeMode.light, current,
                 Icons.light_mode, 'Light'),
-            _buildThemeOption(context, ref, ThemeMode.dark, current,
-                Icons.dark_mode, 'Dark'),
+            _buildThemeOption(
+                context, ref, ThemeMode.dark, current, Icons.dark_mode, 'Dark'),
           ],
         ),
       ),
@@ -118,16 +117,15 @@ class SettingsScreen extends ConsumerWidget {
             color: isSelected ? theme.colorScheme.primary : null,
           )),
       trailing: isSelected
-          ? Icon(Icons.check_circle,
-              color: theme.colorScheme.primary, size: 20)
+          ? Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 20)
           : null,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       dense: true,
     );
   }
 
-  Widget _buildAccessibilityToggle(BuildContext context, WidgetRef ref,
-      LocalStorage storage, bool current) {
+  Widget _buildAccessibilityToggle(
+      BuildContext context, WidgetRef ref, bool current) {
     return Card(
       child: SwitchListTile(
         title: const Text('Accessibility Mode'),
@@ -139,19 +137,19 @@ class SettingsScreen extends ConsumerWidget {
             color: const Color(0xFF22C55E).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: const Icon(Icons.accessible,
-              color: Color(0xFF22C55E), size: 20),
+          child:
+              const Icon(Icons.accessible, color: Color(0xFF22C55E), size: 20),
         ),
         value: current,
-        onChanged: (v) => storage.setAccessibilityMode(v),
+        onChanged: (v) =>
+            ref.read(accessibilityModeProvider.notifier).setEnabled(v),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }
 
   Widget _buildWalkingSpeedSlider(
-      BuildContext context, WidgetRef ref, LocalStorage storage) {
-    final speed = storage.getWalkingSpeed();
+      BuildContext context, WidgetRef ref, double speed) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -188,20 +186,14 @@ class SettingsScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 8),
-            StatefulBuilder(
-              builder: (context, setSliderState) {
-                var val = speed;
-                return Slider(
-                  value: val,
-                  min: 2.0,
-                  max: 7.0,
-                  divisions: 10,
-                  label: '${val.toStringAsFixed(1)} km/h',
-                  onChanged: (v) {
-                    setSliderState(() => val = v);
-                    storage.setWalkingSpeed(v);
-                  },
-                );
+            Slider(
+              value: speed,
+              min: 2.0,
+              max: 7.0,
+              divisions: 10,
+              label: '${speed.toStringAsFixed(1)} km/h',
+              onChanged: (v) {
+                ref.read(walkingSpeedProvider.notifier).setSpeed(v);
               },
             ),
           ],
@@ -239,8 +231,7 @@ class SettingsScreen extends ConsumerWidget {
                       Text('Plus15 Navigator',
                           style: theme.textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w700)),
-                      Text('Version 1.0.0',
-                          style: theme.textTheme.bodySmall),
+                      Text('Version 1.0.0', style: theme.textTheme.bodySmall),
                     ],
                   ),
                 ),
@@ -262,8 +253,7 @@ class SettingsScreen extends ConsumerWidget {
             _buildInfoTile(context, Icons.source, 'Data Source',
                 'City of Calgary Official Map'),
             const SizedBox(height: 8),
-            _buildInfoTile(context, Icons.code, 'Built With',
-                'Flutter & Dart'),
+            _buildInfoTile(context, Icons.code, 'Built With', 'Flutter & Dart'),
           ],
         ),
       ),

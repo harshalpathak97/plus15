@@ -252,6 +252,12 @@ class SavedRoutesScreen extends ConsumerWidget {
       ref.read(activeRouteProvider.notifier).state = result.path;
       ref.read(activeRouteDistanceProvider.notifier).state =
           result.totalDistance;
+      ref.read(navigationSessionProvider.notifier).start(
+            destinationId: route.toId,
+            mode: route.routeType,
+            routePath: result.path,
+            totalDistanceM: result.totalDistance,
+          );
       navigator.go('/map');
     }
   }

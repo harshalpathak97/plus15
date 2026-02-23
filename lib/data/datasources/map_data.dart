@@ -2,12 +2,16 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import '../models/building.dart';
 import '../models/bridge.dart';
+import '../models/entry_point.dart';
+import '../models/map_overlay_config.dart';
 import '../models/shop.dart';
 
 class MapDataSource {
   List<Building>? _buildings;
   List<Bridge>? _bridges;
   List<Shop>? _shops;
+  List<EntryPoint>? _entryPoints;
+  MapOverlayConfig? _overlayConfig;
 
   Future<List<Building>> loadBuildings() async {
     if (_buildings != null) return _buildings!;
@@ -31,5 +35,22 @@ class MapDataSource {
     final list = json.decode(raw) as List;
     _shops = list.map((e) => Shop.fromJson(e)).toList();
     return _shops!;
+  }
+
+  Future<List<EntryPoint>> loadEntryPoints() async {
+    if (_entryPoints != null) return _entryPoints!;
+    final raw = await rootBundle.loadString('assets/data/entry_points.json');
+    final list = json.decode(raw) as List;
+    _entryPoints = list.map((e) => EntryPoint.fromJson(e)).toList();
+    return _entryPoints!;
+  }
+
+  Future<MapOverlayConfig> loadOverlayConfig() async {
+    if (_overlayConfig != null) return _overlayConfig!;
+    final raw =
+        await rootBundle.loadString('assets/data/map_overlay_config.json');
+    final data = json.decode(raw) as Map<String, dynamic>;
+    _overlayConfig = MapOverlayConfig.fromJson(data);
+    return _overlayConfig!;
   }
 }
