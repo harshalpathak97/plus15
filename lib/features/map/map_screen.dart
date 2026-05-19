@@ -11,6 +11,8 @@ import '../../data/models/building.dart';
 import '../../data/models/bridge.dart';
 import '../../data/models/entry_point.dart';
 import '../../shared/providers/providers.dart';
+import '../map_3d/iso_view.dart';
+import '../map_3d/widgets/mode_toggle.dart';
 import 'services/course_tracker.dart';
 import 'services/map_alignment_service.dart';
 import 'widgets/building_tooltip.dart';
@@ -139,6 +141,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
         ? null
         : _mapAlignmentService.compute(overlayConfig);
 
+    final viewMode = ref.watch(mapViewModeProvider);
+
     return Scaffold(
       body: buildingsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -150,7 +154,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
             final buildingMap = {for (final b in buildings) b.id: b};
             final visibleBuildings = _visibleBuildings(buildings);
 
-            return Stack(
+            final flatStack = Stack(
+              key: const ValueKey('flat'),
               children: [
                 FlutterMap(
                   mapController: _mapController,
@@ -316,6 +321,34 @@ class _MapScreenState extends ConsumerState<MapScreen>
                       error: (_, __) => const SizedBox.shrink(),
                     ),
                   ),
+              ],
+            );
+
+            return Stack(
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 320),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  child: viewMode == MapViewMode.flat
+                      ? flatStack
+                      : IsoView(
+                          key: const ValueKey('iso'),
+                          buildings: buildings,
+                          bridges: bridges,
+                        ),
+                ),
+                Positioned(
+                  top: MediaQuery.of(context).padding.top +
+                      (viewMode == MapViewMode.flat ? 82 : 12),
+                  right: 16,
+                  child: ModeToggle(
+                    mode: viewMode,
+                    onChanged: (m) => ref
+                        .read(mapViewModeProvider.notifier)
+                        .state = m,
+                  ).animate().fadeIn(duration: 400.ms, delay: 200.ms),
+                ),
               ],
             );
           },

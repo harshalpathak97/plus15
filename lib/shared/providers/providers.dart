@@ -326,3 +326,13 @@ final userLocationProvider = Provider<AsyncValue<LatLng?>>((ref) {
 });
 
 final mapZoomProvider = StateProvider<double>((ref) => 15.2);
+
+enum MapViewMode { flat, isometric }
+
+final mapViewModeProvider =
+    StateProvider<MapViewMode>((ref) => MapViewMode.flat);
+
+/// Stubbable now-clock — used by the routing time-of-day filter so tests can
+/// substitute a fixed wall clock.
+final currentTimeProvider =
+    Provider<DateTime Function()>((ref) => DateTime.now);
