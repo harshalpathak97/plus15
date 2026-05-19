@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/design/palette.dart';
+
 class RouteOptionCard extends StatelessWidget {
   final String title;
   final IconData icon;
   final double distance;
   final int bridges;
   final double time;
+  final int floorChanges;
+  final double scenicScore;
   final bool isAccessible;
   final bool isSelected;
   final VoidCallback onTap;
@@ -20,37 +24,39 @@ class RouteOptionCard extends StatelessWidget {
     required this.isAccessible,
     required this.isSelected,
     required this.onTap,
+    this.floorChanges = 0,
+    this.scenicScore = 0,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scenic = scenicScore >= 0.6;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: 150,
+        width: 162,
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isSelected
-              ? theme.colorScheme.primary
-              : theme.cardTheme.color,
-          borderRadius: BorderRadius.circular(14),
+          gradient: isSelected ? P15Palette.brandGradient : null,
+          color: isSelected ? null : theme.cardTheme.color,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected
-                ? theme.colorScheme.primary
+                ? Colors.transparent
                 : theme.brightness == Brightness.dark
                     ? const Color(0xFF1E293B)
                     : const Color(0xFFE2E8F0),
-            width: isSelected ? 2 : 1,
+            width: 1,
           ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.25),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  )
+                    color: P15Palette.electricBlue.withValues(alpha: 0.32),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
                 ]
               : null,
         ),
@@ -65,12 +71,16 @@ class RouteOptionCard extends StatelessWidget {
                         ? Colors.white
                         : theme.colorScheme.primary),
                 const SizedBox(width: 6),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: isSelected ? Colors.white : null,
+                Flexible(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: isSelected ? Colors.white : null,
+                    ),
                   ),
                 ),
               ],
@@ -79,38 +89,79 @@ class RouteOptionCard extends StatelessWidget {
             Text(
               '${distance.toInt()}m · ~${time.ceil()} min',
               style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
                 color: isSelected
-                    ? Colors.white.withValues(alpha: 0.9)
-                    : theme.textTheme.bodySmall?.color,
+                    ? Colors.white.withValues(alpha: 0.95)
+                    : theme.textTheme.bodyMedium?.color,
               ),
             ),
-            const SizedBox(height: 2),
-            Row(
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 4,
+              runSpacing: 2,
               children: [
-                Text(
-                  '$bridges bridges',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isSelected
-                        ? Colors.white.withValues(alpha: 0.7)
-                        : theme.textTheme.bodySmall?.color,
-                  ),
+                _chip(
+                  context,
+                  '$bridges br',
+                  Icons.linear_scale_rounded,
+                  isSelected,
                 ),
-                if (isAccessible) ...[
-                  const SizedBox(width: 4),
-                  Icon(Icons.accessible,
-                      size: 12,
-                      color: isSelected
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : const Color(0xFF22C55E)),
-                ],
+                if (floorChanges > 0)
+                  _chip(
+                    context,
+                    'lv$floorChanges',
+                    Icons.elevator_rounded,
+                    isSelected,
+                  ),
+                if (isAccessible)
+                  _chip(
+                    context,
+                    'a11y',
+                    Icons.accessible_rounded,
+                    isSelected,
+                    color: const Color(0xFF22C55E),
+                  ),
+                if (scenic)
+                  _chip(
+                    context,
+                    'scenic',
+                    Icons.visibility_rounded,
+                    isSelected,
+                    color: P15Palette.violetAccent,
+                  ),
               ],
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _chip(
+    BuildContext context,
+    String label,
+    IconData icon,
+    bool selected, {
+    Color? color,
+  }) {
+    final fg = selected
+        ? Colors.white.withValues(alpha: 0.92)
+        : (color ?? Theme.of(context).textTheme.bodySmall?.color);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 11, color: fg),
+        const SizedBox(width: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: fg,
+          ),
+        ),
+      ],
     );
   }
 }

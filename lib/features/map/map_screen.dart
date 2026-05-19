@@ -16,6 +16,7 @@ import '../map_3d/widgets/mode_toggle.dart';
 import 'services/course_tracker.dart';
 import 'services/map_alignment_service.dart';
 import 'widgets/building_tooltip.dart';
+import 'widgets/route_travel_layer.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -218,13 +219,15 @@ class _MapScreenState extends ConsumerState<MapScreen>
                       polylines: _buildBridgeLines(
                           bridges, buildingMap, activeRoute, isDark),
                     ),
-                    if (activeRoute != null && activeRoute.length > 1)
+                    if (activeRoute != null && activeRoute.length > 1) ...[
                       PolylineLayer(
-                        polylines: [
-                          _buildRouteGlowPolyline(activeRoute, buildingMap),
-                          _buildRoutePolyline(activeRoute, buildingMap)
-                        ],
+                        polylines:
+                            _buildRoutePolylines(activeRoute, buildingMap),
                       ),
+                      RouteTravelLayer(
+                        points: _routePoints(activeRoute, buildingMap),
+                      ),
+                    ],
                     if (_currentZoom >= 13.5)
                       MarkerLayer(
                         markers: _buildMarkers(visibleBuildings,
@@ -621,34 +624,63 @@ class _MapScreenState extends ConsumerState<MapScreen>
     }).toList();
   }
 
-  Polyline _buildRoutePolyline(List<String> route, Map<String, Building> bMap) {
-    final points = route
+  List<LatLng> _routePoints(List<String> route, Map<String, Building> bMap) {
+    return route
         .where((id) => bMap.containsKey(id))
         .map((id) => LatLng(bMap[id]!.lat, bMap[id]!.lng))
         .toList();
-
-    return Polyline(
-      points: points,
-      strokeWidth: 5,
-      color: const Color(0xFF3B82F6),
-      borderStrokeWidth: 2,
-      borderColor: const Color(0xFF3B82F6).withValues(alpha: 0.25),
-    );
   }
 
-  Polyline _buildRouteGlowPolyline(
+  /// Renders the active route as three stacked polylines (outer glow, mid
+  /// halo, bright core) plus a per-segment gradient so the path reads as
+  /// "starts green, ends red".
+  List<Polyline> _buildRoutePolylines(
       List<String> route, Map<String, Building> bMap) {
-    final points = route
-        .where((id) => bMap.containsKey(id))
-        .map((id) => LatLng(bMap[id]!.lat, bMap[id]!.lng))
-        .toList();
+    final points = _routePoints(route, bMap);
+    if (points.length < 2) return const [];
 
-    return Polyline(
+    const gradient = [
+      Color(0xFF84CC16), // limeSuccess
+      Color(0xFF22D3EE), // cyanGlow
+      Color(0xFF7C3AED), // violetAccent
+      Color(0xFFEF4444), // danger
+    ];
+
+    Color sample(double t) {
+      final clamped = t.clamp(0.0, 0.9999);
+      final scaled = clamped * (gradient.length - 1);
+      final i = scaled.floor();
+      final f = scaled - i;
+      return Color.lerp(gradient[i], gradient[i + 1], f)!;
+    }
+
+    final outerGlow = Polyline(
       points: points,
-      strokeWidth: 10,
+      strokeWidth: 18,
+      color: const Color(0xFF22D3EE).withValues(alpha: 0.18),
+      borderStrokeWidth: 0,
+    );
+
+    final innerGlow = Polyline(
+      points: points,
+      strokeWidth: 11,
       color: const Color(0xFF22D3EE).withValues(alpha: 0.28),
       borderStrokeWidth: 0,
     );
+
+    final segments = <Polyline>[];
+    for (var i = 0; i < points.length - 1; i++) {
+      final t = i / (points.length - 1);
+      segments.add(Polyline(
+        points: [points[i], points[i + 1]],
+        strokeWidth: 5.5,
+        color: sample(t),
+        borderStrokeWidth: 1.4,
+        borderColor: Colors.white.withValues(alpha: 0.85),
+      ));
+    }
+
+    return [outerGlow, innerGlow, ...segments];
   }
 
   List<Marker> _buildRouteEndpoints(

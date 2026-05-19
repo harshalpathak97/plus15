@@ -94,29 +94,26 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                     .fadeIn(duration: 300.ms),
                 const SizedBox(height: 12),
                 SizedBox(
-                  height: 110,
+                  height: 124,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     itemCount: _results!.length,
                     itemBuilder: (context, index) {
-                      final modes = ['Fastest', 'Accessible', 'Explorer'];
-                      final icons = [
-                        Icons.speed,
-                        Icons.accessible,
-                        Icons.explore
-                      ];
+                      final r = _results![index];
                       return Padding(
                         padding: const EdgeInsets.only(right: 10),
                         child: RouteOptionCard(
-                          title: modes[index],
-                          icon: icons[index],
-                          distance: _results![index].totalDistance,
-                          bridges: _results![index].bridgeCount,
+                          title: _modeTitle(r.modeName),
+                          icon: _modeIcon(r.modeName),
+                          distance: r.totalDistanceM,
+                          bridges: r.bridgeCount,
                           time: AppConstants.estimateWalkTimeMinutes(
-                            _results![index].totalDistance,
+                            r.totalDistanceM,
                             speedKmh: walkingSpeed,
                           ),
-                          isAccessible: _results![index].fullyAccessible,
+                          floorChanges: r.floorChanges,
+                          scenicScore: r.scenicScore,
+                          isAccessible: r.fullyAccessible,
                           isSelected: _selectedIndex == index,
                           onTap: () => setState(() => _selectedIndex = index),
                         ),
@@ -361,11 +358,40 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
 
   Future<void> _calculateRoutes(Building from, Building to) async {
     final pathfinder = await ref.read(pathfinderProvider.future);
-    final results = pathfinder.findAllRoutes(from.id, to.id);
+    final results = pathfinder.findParetoRoutes(from.id, to.id);
     setState(() {
       _results = results;
       _selectedIndex = 0;
     });
+  }
+
+  String _modeTitle(String mode) {
+    switch (mode) {
+      case 'fastest':
+        return 'Fastest';
+      case 'accessible':
+        return 'Accessible';
+      case 'scenic':
+        return 'Scenic';
+      case 'explorer':
+        return 'Explorer';
+      default:
+        return mode;
+    }
+  }
+
+  IconData _modeIcon(String mode) {
+    switch (mode) {
+      case 'accessible':
+        return Icons.accessible_rounded;
+      case 'scenic':
+        return Icons.visibility_rounded;
+      case 'explorer':
+        return Icons.explore_rounded;
+      case 'fastest':
+      default:
+        return Icons.bolt_rounded;
+    }
   }
 
   void _startNavigation() {
@@ -373,16 +399,15 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     HapticFeedback.mediumImpact();
     final selected = _results![_selectedIndex];
     final to = ref.read(routeToProvider);
-    final modes = ['fastest', 'accessible', 'explorer'];
     ref.read(activeRouteProvider.notifier).state = selected.path;
     ref.read(activeRouteDistanceProvider.notifier).state =
-        selected.totalDistance;
+        selected.totalDistanceM;
     if (to != null) {
       ref.read(navigationSessionProvider.notifier).start(
             destinationId: to.id,
-            mode: modes[_selectedIndex],
+            mode: selected.modeName,
             routePath: selected.path,
-            totalDistanceM: selected.totalDistance,
+            totalDistanceM: selected.totalDistanceM,
           );
     }
     context.go('/map');
@@ -427,7 +452,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     final to = ref.read(routeToProvider);
     if (from == null || to == null) return;
 
-    final modes = ['fastest', 'accessible', 'explorer'];
+    final selectedMode = _results![_selectedIndex].modeName;
     final nameController =
         TextEditingController(text: '${from.name} → ${to.name}');
     bool isRoutine = false;
@@ -471,7 +496,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                     name: nameController.text,
                     fromId: from.id,
                     toId: to.id,
-                    routeType: modes[_selectedIndex],
+                    routeType: selectedMode,
                     createdAt: now,
                     isRoutine: isRoutine,
                   );
