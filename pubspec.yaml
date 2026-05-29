@@ -80,7 +80,6 @@ flutter:
     - assets/data/shops.json
     - assets/data/entry_points.json
     - assets/data/map_overlay_config.json
-    - assets/maps/plus15_network_v1.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

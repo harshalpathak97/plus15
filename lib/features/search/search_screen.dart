@@ -267,7 +267,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           .compareTo(buildingMap[b]?.name ?? b));
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 108),
       itemCount: groupKeys.length,
       itemBuilder: (context, index) {
         final buildingId = groupKeys[index];
@@ -334,7 +334,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   height: 34,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF3B82F6), Color(0xFF06B6D4)],
+                      colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
                     ),
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -533,7 +533,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }) {
     return Material(
       color: accent
-          ? const Color(0xFF2563EB)
+          ? const Color(0xFF4338CA)
           : const Color(0xFF334155).withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
@@ -546,14 +546,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             children: [
               Icon(icon,
                   size: 14,
-                  color: accent ? Colors.white : const Color(0xFF2563EB)),
+                  color: accent ? Colors.white : const Color(0xFF4338CA)),
               const SizedBox(width: 5),
               Text(
                 label,
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: accent ? Colors.white : const Color(0xFF2563EB),
+                  color: accent ? Colors.white : const Color(0xFF4338CA),
                 ),
               ),
             ],
@@ -628,7 +628,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       case ShopCategory.retail:
         return const Color(0xFF8B5CF6);
       case ShopCategory.services:
-        return const Color(0xFF3B82F6);
+        return const Color(0xFF4F46E5);
       case ShopCategory.transit:
         return const Color(0xFF22C55E);
       case ShopCategory.washroom:

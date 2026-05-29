@@ -202,7 +202,7 @@ class BuildingTooltip extends StatelessWidget {
                       child: Text(
                         '+${buildingShops.length - 3} more',
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: const Color(0xFF3B82F6),
+                          color: const Color(0xFF4F46E5),
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -220,7 +220,7 @@ class BuildingTooltip extends StatelessWidget {
               label: const Text('Navigate Here',
                   style: TextStyle(fontWeight: FontWeight.w600)),
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF3B82F6),
+                backgroundColor: const Color(0xFF4F46E5),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -255,7 +255,7 @@ class BuildingTooltip extends StatelessWidget {
       case 'park':
         return const Color(0xFF22C55E);
       default:
-        return const Color(0xFF3B82F6);
+        return const Color(0xFF4F46E5);
     }
   }
 

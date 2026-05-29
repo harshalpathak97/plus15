@@ -16,7 +16,7 @@ class SettingsScreen extends ConsumerWidget {
     return Scaffold(
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 108),
           children: [
             Text('Settings', style: theme.textTheme.displayMedium)
                 .animate()
@@ -161,11 +161,11 @@ class SettingsScreen extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
+                    color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(Icons.directions_walk,
-                      color: Color(0xFF3B82F6), size: 20),
+                      color: Color(0xFF4F46E5), size: 20),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -216,7 +216,7 @@ class SettingsScreen extends ConsumerWidget {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF2563EB), Color(0xFF7C3AED)],
+                      colors: [Color(0xFF4338CA), Color(0xFF7C3AED)],
                     ),
                     borderRadius: BorderRadius.circular(12),
                   ),

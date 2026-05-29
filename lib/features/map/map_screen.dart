@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,12 +8,12 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_palette.dart';
 import '../../data/models/building.dart';
 import '../../data/models/bridge.dart';
 import '../../data/models/entry_point.dart';
 import '../../shared/providers/providers.dart';
 import 'services/course_tracker.dart';
-import 'services/map_alignment_service.dart';
 import 'widgets/building_tooltip.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
@@ -25,7 +26,6 @@ class MapScreen extends ConsumerStatefulWidget {
 class _MapScreenState extends ConsumerState<MapScreen>
     with TickerProviderStateMixin {
   final MapController _mapController = MapController();
-  final MapAlignmentService _mapAlignmentService = const MapAlignmentService();
 
   static const _calgaryCenter = LatLng(51.0478, -114.0670);
   static const _plus15Center = LatLng(51.0478, -114.0670);
@@ -124,7 +124,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
     final buildingsAsync = ref.watch(buildingsProvider);
     final bridgesAsync = ref.watch(bridgesProvider);
     final shopsAsync = ref.watch(shopsProvider);
-    final overlayConfigAsync = ref.watch(overlayConfigProvider);
     final selectedBuilding = ref.watch(selectedBuildingProvider);
     final activeRoute = ref.watch(activeRouteProvider);
     final activeRouteDist = ref.watch(activeRouteDistanceProvider);
@@ -134,10 +133,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
     final displayUserLocation =
         _smoothedUserLocation ?? userLocation.valueOrNull;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final overlayConfig = overlayConfigAsync.valueOrNull;
-    final overlayAlignment = overlayConfig == null
-        ? null
-        : _mapAlignmentService.compute(overlayConfig);
+
+    // The Scaffold uses extendBody, so the map paints behind the floating
+    // glass nav bar. Bottom-anchored overlays are lifted to clear it.
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final navClear = 66 + (bottomInset > 0 ? bottomInset : 14) + 16;
 
     return Scaffold(
       body: buildingsAsync.when(
@@ -194,21 +194,13 @@ class _MapScreenState extends ConsumerState<MapScreen>
                       fallbackUrl:
                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     ),
-                    if (overlayConfig != null && overlayAlignment != null)
-                      OverlayImageLayer(
-                        overlayImages: [
-                          RotatedOverlayImage(
-                            imageProvider: AssetImage(overlayConfig.imageAsset),
-                            topLeftCorner: overlayAlignment.topLeft,
-                            bottomLeftCorner: overlayAlignment.bottomLeft,
-                            bottomRightCorner: overlayAlignment.bottomRight,
-                            opacity: isDark
-                                ? overlayConfig.opacityDark
-                                : overlayConfig.opacityLight,
-                            filterQuality: FilterQuality.high,
-                          ),
-                        ],
-                      ),
+                    // The +15 network, drawn as crisp vectors from the real
+                    // bridge graph — a soft glow pass beneath bold skywalk
+                    // lines. No raster overlay, sharp at every zoom level.
+                    PolylineLayer(
+                      polylines:
+                          _buildNetworkGlow(bridges, buildingMap, activeRoute),
+                    ),
                     PolylineLayer(
                       polylines: _buildBridgeLines(
                           bridges, buildingMap, activeRoute, isDark),
@@ -246,13 +238,13 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 Positioned(
                   right: 16,
                   bottom: selectedBuilding != null
-                      ? 300
-                      : (activeRoute != null ? 116 : 24),
+                      ? navClear + 300
+                      : (activeRoute != null ? navClear + 92 : navClear + 8),
                   child: _buildMapControls(context, isDark, userLocation),
                 ),
                 if (navigationSession.isActive)
                   Positioned(
-                    top: MediaQuery.of(context).padding.top + 84,
+                    top: MediaQuery.of(context).padding.top + 88,
                     left: 16,
                     right: 16,
                     child: _buildNavigationStatusCard(
@@ -264,7 +256,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 if (_hasRoutineRoutes())
                   Positioned(
                     left: 16,
-                    bottom: activeRoute != null ? 110 : 24,
+                    bottom: activeRoute != null ? navClear + 92 : navClear + 8,
                     child: _buildQuickRoutes(context, buildings),
                   ),
                 if (navigationSession.status ==
@@ -274,14 +266,14 @@ class _MapScreenState extends ConsumerState<MapScreen>
                   Positioned(
                     left: 16,
                     right: 16,
-                    bottom: activeRoute != null ? 118 : 26,
+                    bottom: activeRoute != null ? navClear + 96 : navClear + 10,
                     child: _buildEntryGuidanceChip(context),
                   ),
                 if (activeRoute != null)
                   Positioned(
                     left: 16,
                     right: 16,
-                    bottom: 24,
+                    bottom: navClear,
                     child: _buildRouteBar(
                       context,
                       navigationSession.isActive
@@ -296,7 +288,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                   Positioned(
                     left: 0,
                     right: 0,
-                    bottom: activeRoute != null ? 94 : 0,
+                    bottom: activeRoute != null ? navClear + 72 : navClear - 8,
                     child: shopsAsync.when(
                       data: (shops) => BuildingTooltip(
                         building: selectedBuilding,
@@ -528,64 +520,85 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return atan2(y, x);
   }
 
+  /// Width of a skywalk line, scaled so the network reads as a clean schematic
+  /// when zoomed out and gains presence as you zoom in.
+  double _networkWidth() {
+    if (_currentZoom >= 16.5) return 5.0;
+    if (_currentZoom >= 16.0) return 4.2;
+    if (_currentZoom >= 15.0) return 3.4;
+    if (_currentZoom >= 13.5) return 2.6;
+    return 2.0;
+  }
+
+  /// Crisp, fully-opaque skywalk lines — the hero of the map. Color encodes
+  /// status: teal = open, amber = stairs-only / limited access, red = closed.
   List<Polyline> _buildBridgeLines(List<Bridge> bridges,
       Map<String, Building> bMap, List<String>? activeRoute, bool isDark) {
-    final zoomedIn = _currentZoom >= 15.0;
-    final veryZoomed = _currentZoom >= 16.0;
-    return bridges
-        .where((b) =>
-            bMap.containsKey(b.fromBuildingId) &&
-            bMap.containsKey(b.toBuildingId))
-        .map((bridge) {
-      final from = bMap[bridge.fromBuildingId]!;
-      final to = bMap[bridge.toBuildingId]!;
+    final width = _networkWidth();
+    final lines = <Polyline>[];
+
+    for (final bridge in bridges) {
+      final from = bMap[bridge.fromBuildingId];
+      final to = bMap[bridge.toBuildingId];
+      if (from == null || to == null) continue;
+
       final isOnRoute = activeRoute != null &&
           _isEdgeOnRoute(
               bridge.fromBuildingId, bridge.toBuildingId, activeRoute);
+      if (isOnRoute) continue; // drawn bolder by the route layer on top
 
       final isClosed = bridge.status != 'open';
       final notAccessible = !bridge.isAccessible;
 
       Color color;
-      double width;
       if (isClosed) {
-        color = const Color(0xFFEF4444).withValues(alpha: 0.5);
-        width = veryZoomed ? 2.5 : 1.5;
+        color = AppPalette.danger.withValues(alpha: 0.85);
       } else if (notAccessible) {
-        color = const Color(0xFFF59E0B).withValues(alpha: 0.45);
-        width = veryZoomed ? 2.5 : 1.5;
-      } else if (isDark) {
-        color = const Color(0xFF38BDF8).withValues(
-            alpha: veryZoomed
-                ? 0.35
-                : zoomedIn
-                    ? 0.25
-                    : 0.18);
-        width = veryZoomed
-            ? 3.0
-            : zoomedIn
-                ? 2.0
-                : 1.5;
+        color = AppPalette.warning.withValues(alpha: 0.9);
       } else {
-        color = const Color(0xFF3B82F6).withValues(
-            alpha: veryZoomed
-                ? 0.35
-                : zoomedIn
-                    ? 0.25
-                    : 0.2);
-        width = veryZoomed
-            ? 3.0
-            : zoomedIn
-                ? 2.0
-                : 1.5;
+        color = isDark
+            ? AppPalette.skywalkBright.withValues(alpha: 0.92)
+            : AppPalette.skywalk;
       }
 
-      return Polyline(
+      lines.add(Polyline(
         points: [LatLng(from.lat, from.lng), LatLng(to.lat, to.lng)],
-        strokeWidth: isOnRoute ? 0 : width,
+        strokeWidth: isClosed ? width * 0.7 : width,
         color: color,
-      );
-    }).toList();
+        borderStrokeWidth: 1.4,
+        borderColor: (isDark ? Colors.black : Colors.white)
+            .withValues(alpha: isDark ? 0.35 : 0.65),
+      ));
+    }
+    return lines;
+  }
+
+  /// A soft luminous halo beneath the open skywalk lines, giving the network
+  /// the feeling of being lit from within.
+  List<Polyline> _buildNetworkGlow(List<Bridge> bridges,
+      Map<String, Building> bMap, List<String>? activeRoute) {
+    if (_currentZoom < 13.0) return const [];
+    final width = _networkWidth() * 2.8;
+    final glow = <Polyline>[];
+
+    for (final bridge in bridges) {
+      if (bridge.status != 'open') continue;
+      final from = bMap[bridge.fromBuildingId];
+      final to = bMap[bridge.toBuildingId];
+      if (from == null || to == null) continue;
+
+      final isOnRoute = activeRoute != null &&
+          _isEdgeOnRoute(
+              bridge.fromBuildingId, bridge.toBuildingId, activeRoute);
+      if (isOnRoute) continue;
+
+      glow.add(Polyline(
+        points: [LatLng(from.lat, from.lng), LatLng(to.lat, to.lng)],
+        strokeWidth: width,
+        color: AppPalette.skywalk.withValues(alpha: 0.14),
+      ));
+    }
+    return glow;
   }
 
   Polyline _buildRoutePolyline(List<String> route, Map<String, Building> bMap) {
@@ -596,10 +609,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
     return Polyline(
       points: points,
-      strokeWidth: 5,
-      color: const Color(0xFF3B82F6),
-      borderStrokeWidth: 2,
-      borderColor: const Color(0xFF3B82F6).withValues(alpha: 0.25),
+      strokeWidth: 6.5,
+      color: AppPalette.brand,
+      borderStrokeWidth: 2.5,
+      borderColor: Colors.white.withValues(alpha: 0.85),
     );
   }
 
@@ -612,8 +625,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
     return Polyline(
       points: points,
-      strokeWidth: 10,
-      color: const Color(0xFF22D3EE).withValues(alpha: 0.28),
+      strokeWidth: 16,
+      color: AppPalette.skywalkBright.withValues(alpha: 0.32),
       borderStrokeWidth: 0,
     );
   }
@@ -818,64 +831,97 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
   Widget _buildHeader(BuildContext context, bool isDark) {
     final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: (isDark ? const Color(0xFF0F0F14) : Colors.white)
-            .withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : const Color(0xFFE2E8F0),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF3B82F6), Color(0xFF8B5CF6)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+    final surface =
+        (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.82);
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.05);
+
+    return Row(
+      children: [
+        // Compact brand mark.
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            gradient: AppPalette.brandGradient,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: AppPalette.brand.withValues(alpha: 0.35),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
               ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Text('+15',
+            ],
+          ),
+          child: const Center(
+            child: Text('+15',
                 style: TextStyle(
                     color: Colors.white,
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -0.5)),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Plus15 Navigator',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700)),
-                Text('Calgary Skywalk Network',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.5)
-                            : const Color(0xFF94A3B8))),
-              ],
+        ),
+        const SizedBox(width: 10),
+        // Tappable search command bar — the primary way to find a place.
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Material(
+                color: surface,
+                child: InkWell(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    context.go('/search');
+                  },
+                  child: Container(
+                    height: 48,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black
+                              .withValues(alpha: isDark ? 0.32 : 0.08),
+                          blurRadius: 20,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.search_rounded,
+                            size: 20,
+                            color: isDark
+                                ? AppPalette.inkMutedDark
+                                : AppPalette.inkMuted),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Search the +15 network',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: isDark
+                                  ? AppPalette.inkMutedDark
+                                  : AppPalette.inkMuted,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        _zoomIndicator(),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-          _zoomIndicator(),
-        ],
-      ),
+        ),
+      ],
     ).animate().fadeIn(duration: 400.ms).slideY(
         begin: -0.3, end: 0, duration: 400.ms, curve: Curves.easeOutCubic);
   }
@@ -887,17 +933,17 @@ class _MapScreenState extends ConsumerState<MapScreen>
             ? 'Standard'
             : 'Overview';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
+        color: AppPalette.skywalk.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         level,
         style: const TextStyle(
           fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF3B82F6),
+          fontWeight: FontWeight.w700,
+          color: AppPalette.skywalk,
         ),
       ),
     );
@@ -966,7 +1012,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                   shape: BoxShape.circle,
                   color: session.status == NavigationStatus.arrived
                       ? const Color(0xFF10B981)
-                      : const Color(0xFF3B82F6),
+                      : const Color(0xFF4F46E5),
                 ),
               ),
               const SizedBox(width: 8),
@@ -999,7 +1045,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
             backgroundColor: isDark
                 ? Colors.white.withValues(alpha: 0.12)
                 : const Color(0xFFE2E8F0),
-            valueColor: const AlwaysStoppedAnimation(Color(0xFF3B82F6)),
+            valueColor: const AlwaysStoppedAnimation(Color(0xFF4F46E5)),
           ),
           const SizedBox(height: 8),
           Text(
@@ -1107,7 +1153,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
       {bool accent = false}) {
     return Material(
       color: accent
-          ? const Color(0xFF3B82F6)
+          ? const Color(0xFF4F46E5)
           : isDark
               ? const Color(0xFF18181B).withValues(alpha: 0.92)
               : Colors.white.withValues(alpha: 0.95),
@@ -1134,7 +1180,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
             boxShadow: [
               BoxShadow(
                 color: accent
-                    ? const Color(0xFF3B82F6).withValues(alpha: 0.3)
+                    ? const Color(0xFF4F46E5).withValues(alpha: 0.3)
                     : Colors.black.withValues(alpha: 0.08),
                 blurRadius: 12,
                 offset: const Offset(0, 2),
@@ -1236,14 +1282,14 @@ class _MapScreenState extends ConsumerState<MapScreen>
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
+          colors: [Color(0xFF4F46E5), Color(0xFF0EA5B7)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF3B82F6).withValues(alpha: 0.35),
+            color: const Color(0xFF4F46E5).withValues(alpha: 0.35),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -1354,7 +1400,7 @@ class _PulsingLocationDotState extends State<_PulsingLocationDot>
               height: 28 + (pulse * 16),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF3B82F6)
+                color: const Color(0xFF4F46E5)
                     .withValues(alpha: 0.15 * (1 - pulse)),
               ),
             ),
@@ -1363,11 +1409,11 @@ class _PulsingLocationDotState extends State<_PulsingLocationDot>
               height: 16,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF3B82F6),
+                color: const Color(0xFF4F46E5),
                 border: Border.all(color: Colors.white, width: 3),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF3B82F6).withValues(alpha: 0.4),
+                    color: const Color(0xFF4F46E5).withValues(alpha: 0.4),
                     blurRadius: 8,
                     spreadRadius: 1,
                   ),
@@ -1462,9 +1508,9 @@ class _BuildingChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bgColor = isSelected
-        ? const Color(0xFF3B82F6)
+        ? const Color(0xFF4F46E5)
         : isOnRoute
-            ? const Color(0xFF3B82F6).withValues(alpha: 0.9)
+            ? const Color(0xFF4F46E5).withValues(alpha: 0.9)
             : isDark
                 ? const Color(0xFF18181B).withValues(alpha: 0.92)
                 : Colors.white.withValues(alpha: 0.95);
@@ -1476,7 +1522,7 @@ class _BuildingChip extends StatelessWidget {
             : const Color(0xFF27272A);
 
     final borderColor = isSelected
-        ? const Color(0xFF3B82F6)
+        ? const Color(0xFF4F46E5)
         : isOnRoute
             ? const Color(0xFF60A5FA)
             : isDark
@@ -1493,7 +1539,7 @@ class _BuildingChip extends StatelessWidget {
           boxShadow: [
             if (isSelected)
               BoxShadow(
-                color: const Color(0xFF3B82F6).withValues(alpha: 0.3),
+                color: const Color(0xFF4F46E5).withValues(alpha: 0.3),
                 blurRadius: 14,
                 spreadRadius: 1,
               )

@@ -50,7 +50,7 @@ class SavedRoutesScreen extends ConsumerWidget {
                           for (final b in buildings) b.id: b
                         };
                         return ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 108),
                           itemCount: savedRoutes.length,
                           itemBuilder: (context, index) {
                             final route = savedRoutes[index];

@@ -159,7 +159,7 @@ class ShopDetailSheet extends StatelessWidget {
       case ShopCategory.retail:
         return const Color(0xFF8B5CF6);
       case ShopCategory.services:
-        return const Color(0xFF3B82F6);
+        return const Color(0xFF4F46E5);
       case ShopCategory.transit:
         return const Color(0xFF22C55E);
       case ShopCategory.washroom:

@@ -37,7 +37,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(child: Text('Error: $e')),
           data: (buildings) => ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 108),
             children: [
               Text('Route Planner', style: theme.textTheme.displayMedium)
                   .animate()
