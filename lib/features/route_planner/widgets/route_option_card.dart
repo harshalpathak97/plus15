@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/theme/app_palette.dart';
 
 class RouteOptionCard extends StatelessWidget {
   final String title;
@@ -25,52 +26,78 @@ class RouteOptionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final secondaryOnSelected = Colors.white.withValues(alpha: 0.85);
+    final mutedColor = theme.textTheme.bodySmall?.color;
+
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 150,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        width: 158,
         padding: const EdgeInsets.all(14),
+        transform: isSelected
+            ? (Matrix4.identity()..scale(1.0))
+            : (Matrix4.identity()..scale(0.97)),
+        transformAlignment: Alignment.center,
         decoration: BoxDecoration(
+          gradient: isSelected ? AppPalette.brandGradient : null,
           color: isSelected
-              ? theme.colorScheme.primary
-              : theme.cardTheme.color,
-          borderRadius: BorderRadius.circular(14),
+              ? null
+              : (isDark ? AppPalette.cardDark : AppPalette.cardLight),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected
-                ? theme.colorScheme.primary
-                : theme.brightness == Brightness.dark
-                    ? const Color(0xFF1E293B)
-                    : const Color(0xFFE2E8F0),
-            width: isSelected ? 2 : 1,
+                ? Colors.transparent
+                : (isDark ? AppPalette.borderDark : AppPalette.borderLight),
+            width: 1,
           ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.25),
+                    color: AppPalette.brand.withValues(alpha: 0.35),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  )
+                ]
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   )
-                ]
-              : null,
+                ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(icon,
-                    size: 18,
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
                     color: isSelected
-                        ? Colors.white
-                        : theme.colorScheme.primary),
-                const SizedBox(width: 6),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: isSelected ? Colors.white : null,
+                        ? Colors.white.withValues(alpha: 0.18)
+                        : AppPalette.brand.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon,
+                      size: 18,
+                      color: isSelected ? Colors.white : AppPalette.brand),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: isSelected ? Colors.white : null,
+                    ),
                   ),
                 ),
               ],
@@ -80,13 +107,11 @@ class RouteOptionCard extends StatelessWidget {
               '${distance.toInt()}m · ~${time.ceil()} min',
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: isSelected
-                    ? Colors.white.withValues(alpha: 0.9)
-                    : theme.textTheme.bodySmall?.color,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? secondaryOnSelected : mutedColor,
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 6),
             Row(
               children: [
                 Text(
@@ -95,16 +120,24 @@ class RouteOptionCard extends StatelessWidget {
                     fontSize: 11,
                     color: isSelected
                         ? Colors.white.withValues(alpha: 0.7)
-                        : theme.textTheme.bodySmall?.color,
+                        : mutedColor,
                   ),
                 ),
                 if (isAccessible) ...[
-                  const SizedBox(width: 4),
-                  Icon(Icons.accessible,
-                      size: 12,
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
                       color: isSelected
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : const Color(0xFF22C55E)),
+                          ? Colors.white.withValues(alpha: 0.18)
+                          : AppPalette.origin.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(Icons.accessible_rounded,
+                        size: 12,
+                        color: isSelected ? Colors.white : AppPalette.origin),
+                  ),
                 ],
               ],
             ),

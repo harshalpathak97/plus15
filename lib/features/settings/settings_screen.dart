@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../core/theme/app_palette.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/section_header.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -29,24 +33,24 @@ class SettingsScreen extends ConsumerWidget {
                 .animate()
                 .fadeIn(duration: 400.ms, delay: 100.ms),
             const SizedBox(height: 24),
-            _buildSectionTitle(context, 'Appearance'),
-            const SizedBox(height: 8),
+            const SectionHeader('Appearance'),
+            const SizedBox(height: 10),
             _buildThemeSelector(context, ref, themeMode)
                 .animate()
                 .fadeIn(duration: 400.ms, delay: 150.ms),
             const SizedBox(height: 24),
-            _buildSectionTitle(context, 'Navigation Preferences'),
-            const SizedBox(height: 8),
+            const SectionHeader('Navigation Preferences'),
+            const SizedBox(height: 10),
             _buildAccessibilityToggle(context, ref, accessibilityMode)
                 .animate()
                 .fadeIn(duration: 400.ms, delay: 200.ms),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             _buildWalkingSpeedSlider(context, ref, walkingSpeed)
                 .animate()
                 .fadeIn(duration: 400.ms, delay: 250.ms),
             const SizedBox(height: 24),
-            _buildSectionTitle(context, 'About'),
-            const SizedBox(height: 8),
+            const SectionHeader('About'),
+            const SizedBox(height: 10),
             _buildAboutCard(context)
                 .animate()
                 .fadeIn(duration: 400.ms, delay: 300.ms),
@@ -60,7 +64,7 @@ class SettingsScreen extends ConsumerWidget {
                           color: theme.textTheme.bodySmall?.color
                               ?.withValues(alpha: 0.6))),
                   const Icon(Icons.favorite,
-                      size: 14, color: Color(0xFFEF4444)),
+                      size: 14, color: AppPalette.destination),
                   Text(' by Harshal',
                       style: theme.textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.w600,
@@ -76,57 +80,79 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSectionTitle(BuildContext context, String title) {
-    return Text(title,
-        style: Theme.of(context)
-            .textTheme
-            .titleMedium
-            ?.copyWith(fontWeight: FontWeight.w600));
-  }
-
   Widget _buildThemeSelector(
       BuildContext context, WidgetRef ref, ThemeMode current) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Column(
-          children: [
-            _buildThemeOption(context, ref, ThemeMode.system, current,
-                Icons.brightness_auto, 'System'),
-            _buildThemeOption(context, ref, ThemeMode.light, current,
-                Icons.light_mode, 'Light'),
-            _buildThemeOption(
-                context, ref, ThemeMode.dark, current, Icons.dark_mode, 'Dark'),
-          ],
-        ),
-      ),
-    );
-  }
+    final options = <(ThemeMode, IconData, String)>[
+      (ThemeMode.system, Icons.brightness_auto_rounded, 'System'),
+      (ThemeMode.light, Icons.light_mode_rounded, 'Light'),
+      (ThemeMode.dark, Icons.dark_mode_rounded, 'Dark'),
+    ];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-  Widget _buildThemeOption(BuildContext context, WidgetRef ref, ThemeMode mode,
-      ThemeMode current, IconData icon, String label) {
-    final theme = Theme.of(context);
-    final isSelected = mode == current;
-    return ListTile(
-      onTap: () => ref.read(themeModeProvider.notifier).setMode(mode),
-      leading: Icon(icon,
-          color: isSelected ? theme.colorScheme.primary : null, size: 20),
-      title: Text(label,
-          style: TextStyle(
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-            color: isSelected ? theme.colorScheme.primary : null,
-          )),
-      trailing: isSelected
-          ? Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 20)
-          : null,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      dense: true,
+    return GlassCard(
+      padding: const EdgeInsets.all(6),
+      child: Row(
+        children: [
+          for (final (mode, icon, label) in options)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  ref.read(themeModeProvider.notifier).setMode(mode);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: mode == current ? AppPalette.brandGradient : null,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: mode == current
+                        ? [
+                            BoxShadow(
+                              color: AppPalette.brand.withValues(alpha: 0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            )
+                          ]
+                        : null,
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(icon,
+                          size: 20,
+                          color: mode == current
+                              ? Colors.white
+                              : (isDark
+                                  ? AppPalette.inkMutedDark
+                                  : AppPalette.inkMuted)),
+                      const SizedBox(height: 6),
+                      Text(label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: mode == current
+                                ? Colors.white
+                                : (isDark
+                                    ? AppPalette.inkMutedDark
+                                    : AppPalette.inkMuted),
+                          )),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
   Widget _buildAccessibilityToggle(
       BuildContext context, WidgetRef ref, bool current) {
-    return Card(
+    return GlassCard(
+      padding: EdgeInsets.zero,
       child: SwitchListTile(
         title: const Text('Accessibility Mode'),
         subtitle: const Text('Always prefer accessible routes',
@@ -134,128 +160,147 @@ class SettingsScreen extends ConsumerWidget {
         secondary: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: const Color(0xFF22C55E).withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
+            color: AppPalette.transit.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
           ),
-          child:
-              const Icon(Icons.accessible, color: Color(0xFF22C55E), size: 20),
+          child: const Icon(Icons.accessible_rounded,
+              color: AppPalette.transit, size: 20),
         ),
         value: current,
-        onChanged: (v) =>
-            ref.read(accessibilityModeProvider.notifier).setEnabled(v),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        onChanged: (v) {
+          HapticFeedback.lightImpact();
+          ref.read(accessibilityModeProvider.notifier).setEnabled(v);
+        },
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       ),
     );
   }
 
   Widget _buildWalkingSpeedSlider(
       BuildContext context, WidgetRef ref, double speed) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.directions_walk,
-                      color: Color(0xFF4F46E5), size: 20),
+    final theme = Theme.of(context);
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppPalette.brand.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Walking Speed',
-                          style: TextStyle(fontWeight: FontWeight.w500)),
-                      Text('Affects time estimates',
-                          style: TextStyle(fontSize: 12)),
-                    ],
-                  ),
+                child: const Icon(Icons.directions_walk_rounded,
+                    color: AppPalette.brand, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Walking Speed',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    Text('Affects time estimates',
+                        style: TextStyle(fontSize: 12)),
+                  ],
                 ),
-                Text('${speed.toStringAsFixed(1)} km/h',
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppPalette.brand.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('${speed.toStringAsFixed(1)} km/h',
                     style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Slider(
-              value: speed,
-              min: 2.0,
-              max: 7.0,
-              divisions: 10,
-              label: '${speed.toStringAsFixed(1)} km/h',
-              onChanged: (v) {
-                ref.read(walkingSpeedProvider.notifier).setSpeed(v);
-              },
-            ),
-          ],
-        ),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        color: theme.colorScheme.primary)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Slider(
+            value: speed,
+            min: 2.0,
+            max: 7.0,
+            divisions: 10,
+            label: '${speed.toStringAsFixed(1)} km/h',
+            onChanged: (v) {
+              ref.read(walkingSpeedProvider.notifier).setSpeed(v);
+            },
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildAboutCard(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF4338CA), Color(0xFF7C3AED)],
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: AppPalette.brandGradient,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppPalette.brand.withValues(alpha: 0.32),
+                      blurRadius: 14,
+                      offset: const Offset(0, 5),
                     ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.location_city,
-                      color: Colors.white, size: 24),
+                  ],
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Plus15 Navigator',
-                          style: theme.textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w700)),
-                      Text('Version 1.0.0', style: theme.textTheme.bodySmall),
-                    ],
-                  ),
+                child: const Text('+15',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5)),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Plus15 Navigator',
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    Text('Version 1.0.0', style: theme.textTheme.bodySmall),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Navigate Calgary\'s Plus 15 skywalk network with ease. '
-              '16km of elevated, climate-controlled walkways connecting '
-              '100+ buildings in downtown Calgary.',
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-            ),
-            const SizedBox(height: 16),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
-            _buildInfoTile(context, Icons.schedule, 'Operating Hours',
-                'Mon-Fri 6AM-9PM · Sat-Sun 9AM-7PM'),
-            const SizedBox(height: 8),
-            _buildInfoTile(context, Icons.source, 'Data Source',
-                'City of Calgary Official Map'),
-            const SizedBox(height: 8),
-            _buildInfoTile(context, Icons.code, 'Built With', 'Flutter & Dart'),
-          ],
-        ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Navigate Calgary\'s Plus 15 skywalk network with ease. '
+            '16km of elevated, climate-controlled walkways connecting '
+            '100+ buildings in downtown Calgary.',
+            style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+          ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          _buildInfoTile(context, Icons.schedule_rounded, 'Operating Hours',
+              'Mon-Fri 6AM-9PM · Sat-Sun 9AM-7PM'),
+          const SizedBox(height: 8),
+          _buildInfoTile(context, Icons.source_rounded, 'Data Source',
+              'City of Calgary Official Map'),
+          const SizedBox(height: 8),
+          _buildInfoTile(
+              context, Icons.code_rounded, 'Built With', 'Flutter & Dart'),
+        ],
       ),
     );
   }

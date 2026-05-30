@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../core/theme/app_palette.dart';
 import '../../data/models/shop.dart';
 
 class ShopDetailSheet extends StatelessWidget {
@@ -48,11 +49,25 @@ class ShopDetailSheet extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: _categoryColor().withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(14),
+                      gradient: LinearGradient(
+                        colors: [
+                          _categoryColor(),
+                          _categoryColor().withValues(alpha: 0.72),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _categoryColor().withValues(alpha: 0.35),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
                     ),
                     child: Icon(_categoryIcon(),
-                        color: _categoryColor(), size: 24),
+                        color: Colors.white, size: 24),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -152,26 +167,7 @@ class ShopDetailSheet extends StatelessWidget {
     );
   }
 
-  Color _categoryColor() {
-    switch (shop.category) {
-      case ShopCategory.food:
-        return const Color(0xFFEF4444);
-      case ShopCategory.retail:
-        return const Color(0xFF8B5CF6);
-      case ShopCategory.services:
-        return const Color(0xFF4F46E5);
-      case ShopCategory.transit:
-        return const Color(0xFF22C55E);
-      case ShopCategory.washroom:
-        return const Color(0xFF06B6D4);
-      case ShopCategory.hotel:
-        return const Color(0xFFF59E0B);
-      case ShopCategory.health:
-        return const Color(0xFFEC4899);
-      case ShopCategory.entertainment:
-        return const Color(0xFFF97316);
-    }
-  }
+  Color _categoryColor() => AppPalette.categoryColor(shop.category.name);
 
   IconData _categoryIcon() {
     switch (shop.category) {

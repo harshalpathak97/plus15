@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_palette.dart';
 import '../../data/models/building.dart';
 import '../../data/models/saved_route.dart';
 import '../../data/graph/pathfinder.dart';
@@ -56,14 +57,30 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                   .fadeIn(duration: 400.ms, delay: 150.ms),
               const SizedBox(height: 10),
               Center(
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
+                child: GestureDetector(
+                  onTap: () {
+                    final f = ref.read(routeFromProvider);
+                    final t = ref.read(routeToProvider);
+                    ref.read(routeFromProvider.notifier).state = t;
+                    ref.read(routeToProvider.notifier).state = f;
+                    setState(() => _results = null);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: AppPalette.brandGradient,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppPalette.brand.withValues(alpha: 0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.swap_vert_rounded,
+                        size: 20, color: Colors.white),
                   ),
-                  child: Icon(Icons.swap_vert,
-                      size: 20, color: theme.colorScheme.primary),
                 ),
               ),
               const SizedBox(height: 10),
@@ -203,30 +220,38 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     bool allowUseMyLocation = false,
   }) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final pinColor = isFrom ? AppPalette.origin : AppPalette.destination;
     return InkWell(
       onTap: () => _showBuildingPicker(context, buildings, isFrom),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: theme.inputDecorationTheme.fillColor,
-          borderRadius: BorderRadius.circular(12),
+          color: isDark ? AppPalette.cardDark : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+              color: isDark ? AppPalette.borderDark : AppPalette.borderLight),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.05),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
-                color:
-                    (isFrom ? const Color(0xFF22C55E) : const Color(0xFFEF4444))
-                        .withValues(alpha: 0.1),
+                color: pinColor.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 isFrom ? Icons.trip_origin : Icons.location_on,
                 size: 16,
-                color:
-                    isFrom ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
+                color: pinColor,
               ),
             ),
             const SizedBox(width: 12),
@@ -301,11 +326,14 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                     children: [
                       const SizedBox(height: 12),
                       Container(
-                        width: 40,
-                        height: 4,
+                        width: 44,
+                        height: 5,
                         decoration: BoxDecoration(
-                          color: Theme.of(context).dividerColor,
-                          borderRadius: BorderRadius.circular(2),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.35),
+                          borderRadius: BorderRadius.circular(3),
                         ),
                       ),
                       Padding(
@@ -326,10 +354,21 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                           itemCount: filtered.length,
                           itemBuilder: (_, i) {
                             final b = filtered[i];
+                            final tColor = AppPalette.typeColor(b.type);
                             return ListTile(
-                              leading:
-                                  const Icon(Icons.location_city, size: 20),
-                              title: Text(b.name),
+                              leading: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: tColor.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(11),
+                                ),
+                                child: Icon(_typeIcon(b.type),
+                                    size: 19, color: tColor),
+                              ),
+                              title: Text(b.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600)),
                               subtitle: b.address.isNotEmpty
                                   ? Text(b.address,
                                       style: const TextStyle(fontSize: 12))
@@ -419,6 +458,31 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   double _distanceM(LatLng from, LatLng to) {
     const meter = Distance();
     return meter(from, to);
+  }
+
+  IconData _typeIcon(String type) {
+    switch (type) {
+      case 'hotel':
+        return Icons.hotel_rounded;
+      case 'retail':
+        return Icons.shopping_bag_rounded;
+      case 'landmark':
+        return Icons.star_rounded;
+      case 'entertainment':
+        return Icons.theaters_rounded;
+      case 'government':
+        return Icons.account_balance_rounded;
+      case 'convention':
+        return Icons.business_rounded;
+      case 'park':
+        return Icons.park_rounded;
+      case 'parking':
+        return Icons.local_parking_rounded;
+      case 'residential':
+        return Icons.apartment_rounded;
+      default:
+        return Icons.location_city_rounded;
+    }
   }
 
   void _saveRoute() {

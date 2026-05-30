@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/theme/app_palette.dart';
 import '../../data/models/saved_route.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/widgets/glass_card.dart';
 
 class SavedRoutesScreen extends ConsumerWidget {
   const SavedRoutesScreen({super.key});
@@ -63,13 +66,19 @@ class SavedRoutesScreen extends ConsumerWidget {
                               direction: DismissDirection.endToStart,
                               background: Container(
                                 alignment: Alignment.centerRight,
-                                padding: const EdgeInsets.only(right: 20),
-                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.only(right: 22),
+                                margin: const EdgeInsets.only(bottom: 12),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFEF4444),
-                                  borderRadius: BorderRadius.circular(16),
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      AppPalette.destination
+                                          .withValues(alpha: 0.85),
+                                      AppPalette.destination,
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(18),
                                 ),
-                                child: const Icon(Icons.delete_outline,
+                                child: const Icon(Icons.delete_rounded,
                                     color: Colors.white),
                               ),
                               onDismissed: (_) {
@@ -116,13 +125,20 @@ class SavedRoutesScreen extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(26),
             decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withValues(alpha: 0.08),
+              gradient: AppPalette.brandGradient,
               shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: AppPalette.brand.withValues(alpha: 0.35),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
-            child: Icon(Icons.bookmark_outline,
-                size: 48, color: theme.colorScheme.primary.withValues(alpha: 0.5)),
+            child: const Icon(Icons.bookmark_rounded,
+                size: 48, color: Colors.white),
           ),
           const SizedBox(height: 20),
           Text('No saved routes yet', style: theme.textTheme.titleMedium),
@@ -151,95 +167,110 @@ class SavedRoutesScreen extends ConsumerWidget {
       SavedRoute route, String fromName, String toName) {
     final theme = Theme.of(context);
     final modeIcon = _modeIcon(route.routeType);
+    final modeColor = _modeColor(route.routeType);
     final modeLabel = route.routeType[0].toUpperCase() +
         route.routeType.substring(1);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: InkWell(
-        onTap: () => _goRoute(context, ref, route),
-        onLongPress: () => _showRenameDialog(context, ref, route),
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(modeIcon,
-                    color: theme.colorScheme.primary, size: 20),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return GlassCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      accent: LinearGradient(
+        colors: [modeColor, modeColor.withValues(alpha: 0.6)],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      ),
+      onTap: () => _goRoute(context, ref, route),
+      onLongPress: () => _showRenameDialog(context, ref, route),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: modeColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(modeIcon, color: modeColor, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(route.name,
-                              style: theme.textTheme.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
-                        ),
-                        if (route.isRoutine)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF59E0B)
-                                  .withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.bolt,
-                                    size: 10, color: Color(0xFFF59E0B)),
-                                SizedBox(width: 2),
-                                Text('Routine',
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        color: Color(0xFFF59E0B),
-                                        fontWeight: FontWeight.w500)),
-                              ],
-                            ),
-                          ),
-                      ],
+                    Expanded(
+                      child: Text(route.name,
+                          style: theme.textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
                     ),
-                    const SizedBox(height: 4),
-                    Text('$fromName → $toName',
-                        style: theme.textTheme.bodySmall,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 2),
-                    Text(modeLabel,
-                        style: theme.textTheme.labelSmall),
+                    if (route.isRoutine)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppPalette.warning.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color:
+                                  AppPalette.warning.withValues(alpha: 0.25)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.bolt_rounded,
+                                size: 11, color: AppPalette.warning),
+                            SizedBox(width: 2),
+                            Text('Routine',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: AppPalette.warning,
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: () => _goRoute(context, ref, route),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                  minimumSize: Size.zero,
-                ),
-                child: const Text('Go', style: TextStyle(fontSize: 13)),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text('$fromName → $toName',
+                    style: theme.textTheme.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text(modeLabel, style: theme.textTheme.labelSmall),
+              ],
+            ),
           ),
-        ),
+          const SizedBox(width: 8),
+          FilledButton.icon(
+            onPressed: () {
+              HapticFeedback.mediumImpact();
+              _goRoute(context, ref, route);
+            },
+            icon: const Icon(Icons.navigation_rounded, size: 15),
+            label: const Text('Go', style: TextStyle(fontSize: 13)),
+            style: FilledButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              minimumSize: Size.zero,
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Color _modeColor(String mode) {
+    switch (mode) {
+      case 'accessible':
+        return AppPalette.origin;
+      case 'explorer':
+        return AppPalette.skywalk;
+      default:
+        return AppPalette.brand;
+    }
   }
 
   void _goRoute(

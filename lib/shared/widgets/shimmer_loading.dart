@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_palette.dart';
 
 class ShimmerLoading extends StatefulWidget {
   final double width;
@@ -25,7 +26,7 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1200),
     )..repeat();
   }
 
@@ -51,14 +52,14 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
               end: Alignment(1.0 + 2.0 * _controller.value, 0),
               colors: isDark
                   ? [
-                      const Color(0xFF1E293B),
-                      const Color(0xFF334155),
-                      const Color(0xFF1E293B),
+                      AppPalette.cardDark,
+                      AppPalette.borderDark,
+                      AppPalette.cardDark,
                     ]
                   : [
-                      const Color(0xFFE2E8F0),
-                      const Color(0xFFF1F5F9),
-                      const Color(0xFFE2E8F0),
+                      AppPalette.borderLight,
+                      const Color(0xFFF1F3F9),
+                      AppPalette.borderLight,
                     ],
             ),
           ),

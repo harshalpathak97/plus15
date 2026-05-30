@@ -87,6 +87,31 @@ class AppPalette {
     }
   }
 
+  /// Color for a shop category. Keyed by [ShopCategory.name] so this stays
+  /// decoupled from the data layer. Shared by Search and the shop detail sheet.
+  static Color categoryColor(String category) {
+    switch (category) {
+      case 'food':
+        return danger;
+      case 'retail':
+        return const Color(0xFF8B5CF6);
+      case 'services':
+        return brand;
+      case 'transit':
+        return transit;
+      case 'washroom':
+        return const Color(0xFF06B6D4);
+      case 'hotel':
+        return warning;
+      case 'health':
+        return const Color(0xFFEC4899);
+      case 'entertainment':
+        return const Color(0xFFF97316);
+      default:
+        return brand;
+    }
+  }
+
   /// The signature brand gradient used on primary surfaces and the route bar.
   static const LinearGradient brandGradient = LinearGradient(
     colors: [brand, skywalk],

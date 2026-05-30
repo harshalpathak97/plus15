@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/theme/app_palette.dart';
 import '../../data/models/building.dart';
 import '../../data/models/bridge.dart';
 import '../../data/models/shop.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/widgets/glass_card.dart';
 import '../shop_detail/shop_detail_sheet.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
@@ -65,10 +68,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         ref.read(searchQueryProvider.notifier).state = v,
                     decoration: InputDecoration(
                       hintText: 'Search places, food, or services...',
-                      prefixIcon: const Icon(Icons.search, size: 20),
+                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
                       suffixIcon: query.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
+                              icon: const Icon(Icons.close_rounded, size: 18),
                               onPressed: () {
                                 _searchController.clear();
                                 ref.read(searchQueryProvider.notifier).state =
@@ -124,23 +127,27 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          _quickFilterChip(
+          _pill(
             label: 'Open now',
+            icon: Icons.schedule_rounded,
             selected: _filterOpenNow,
             onTap: () => setState(() => _filterOpenNow = !_filterOpenNow),
           ),
-          _quickFilterChip(
+          _pill(
             label: 'Food',
+            icon: Icons.restaurant_rounded,
             selected: _filterFood,
             onTap: () => setState(() => _filterFood = !_filterFood),
           ),
-          _quickFilterChip(
+          _pill(
             label: 'Transit',
+            icon: Icons.train_rounded,
             selected: _filterTransit,
             onTap: () => setState(() => _filterTransit = !_filterTransit),
           ),
-          _quickFilterChip(
+          _pill(
             label: 'Accessible',
+            icon: Icons.accessible_rounded,
             selected: _filterAccessible,
             onTap: () =>
                 setState(() => _filterAccessible = !_filterAccessible),
@@ -150,24 +157,72 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  Widget _quickFilterChip({
+  /// A custom pill used for quick filters and category chips: a brand-gradient
+  /// fill when selected, a bordered surface otherwise, with a subtle scale.
+  Widget _pill({
     required String label,
     required bool selected,
     required VoidCallback onTap,
+    IconData? icon,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface = isDark ? AppPalette.cardDark : Colors.white;
+    final border = isDark ? AppPalette.borderDark : AppPalette.borderLight;
+    final textColor = selected
+        ? Colors.white
+        : (isDark ? AppPalette.inkMutedDark : AppPalette.inkMuted);
+
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: AnimatedScale(
+          scale: selected ? 1.0 : 0.97,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: selected ? AppPalette.brandGradient : null,
+              color: selected ? null : surface,
+              borderRadius: BorderRadius.circular(12),
+              border:
+                  Border.all(color: selected ? Colors.transparent : border),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: AppPalette.brand.withValues(alpha: 0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      )
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 14, color: textColor),
+                  const SizedBox(width: 5),
+                ],
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    color: textColor,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        selected: selected,
-        onSelected: (_) => onTap(),
-        visualDensity: VisualDensity.compact,
       ),
     );
   }
@@ -244,18 +299,34 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.travel_explore,
-                size: 60, color: theme.textTheme.bodySmall?.color),
-            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                gradient: AppPalette.brandGradient,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppPalette.brand.withValues(alpha: 0.3),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.travel_explore_rounded,
+                  size: 44, color: Colors.white),
+            ),
+            const SizedBox(height: 18),
             Text('No matches yet', style: theme.textTheme.titleMedium),
             const SizedBox(height: 4),
             Text(
               'Try changing filters or searching another building',
+              textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall,
             ),
           ],
         ),
-      ).animate().fadeIn(duration: 260.ms);
+      ).animate().fadeIn(duration: 260.ms).scale(
+          begin: const Offset(0.96, 0.96), end: const Offset(1, 1));
     }
 
     final grouped = <String, List<Shop>>{};
@@ -304,25 +375,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildBuildingGroupCard(BuildContext context, Building? building,
       List<Shop> shops, bool isAccessible) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF151922) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFFE2E8F0),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.22 : 0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
-          )
-        ],
-      ),
+    return GlassCard(
+      padding: EdgeInsets.zero,
+      accent: AppPalette.brandGradient,
       child: Column(
         children: [
           Padding(
@@ -330,13 +386,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             child: Row(
               children: [
                 Container(
-                  width: 34,
-                  height: 34,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
-                    ),
-                    borderRadius: BorderRadius.circular(10),
+                    gradient: AppPalette.brandGradient,
+                    borderRadius: BorderRadius.circular(11),
                   ),
                   child: const Icon(Icons.location_city_rounded,
                       size: 18, color: Colors.white),
@@ -365,16 +419,24 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF22C55E).withValues(alpha: 0.1),
+                      color: AppPalette.transit.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text(
-                      'Accessible',
-                      style: TextStyle(
-                        color: Color(0xFF16A34A),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.accessible_rounded,
+                            size: 11, color: AppPalette.transit),
+                        SizedBox(width: 3),
+                        Text(
+                          'Accessible',
+                          style: TextStyle(
+                            color: AppPalette.transit,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ],
@@ -390,6 +452,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildShopRow(BuildContext context, Shop shop, Building? building) {
     final theme = Theme.of(context);
     final saved = _savedShopIds.contains(shop.id);
+    final catColor = AppPalette.categoryColor(shop.category.name);
+    final openNow = _isOpenNow(shop.hours);
 
     return InkWell(
       onTap: () => _showShopDetail(context, shop, building?.name),
@@ -404,11 +468,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 Container(
                   padding: const EdgeInsets.all(9),
                   decoration: BoxDecoration(
-                    color: _categoryColor(shop.category).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
+                    color: catColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(11),
                   ),
                   child: Icon(_categoryIcon(shop.category),
-                      size: 18, color: _categoryColor(shop.category)),
+                      size: 18, color: catColor),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -432,10 +496,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 3),
+                                horizontal: 7, vertical: 3),
                             decoration: BoxDecoration(
-                              color: _categoryColor(shop.category)
-                                  .withValues(alpha: 0.1),
+                              color: catColor.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
@@ -443,28 +506,28 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
-                                color: _categoryColor(shop.category),
+                                color: catColor,
                               ),
                             ),
                           ),
                           const SizedBox(width: 6),
                           Icon(
-                            _isOpenNow(shop.hours)
-                                ? Icons.schedule
+                            openNow
+                                ? Icons.schedule_rounded
                                 : Icons.schedule_outlined,
                             size: 12,
-                            color: _isOpenNow(shop.hours)
-                                ? const Color(0xFF22C55E)
+                            color: openNow
+                                ? AppPalette.transit
                                 : theme.textTheme.bodySmall?.color,
                           ),
                           const SizedBox(width: 3),
                           Text(
-                            _isOpenNow(shop.hours) ? 'Open now' : 'Closed now',
+                            openNow ? 'Open now' : 'Closed now',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
-                              color: _isOpenNow(shop.hours)
-                                  ? const Color(0xFF16A34A)
+                              color: openNow
+                                  ? AppPalette.transit
                                   : theme.textTheme.bodySmall?.color,
                             ),
                           ),
@@ -531,32 +594,49 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     required VoidCallback onTap,
     bool accent = false,
   }) {
-    return Material(
-      color: accent
-          ? const Color(0xFF4338CA)
-          : const Color(0xFF334155).withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon,
-                  size: 14,
-                  color: accent ? Colors.white : const Color(0xFF4338CA)),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: accent ? Colors.white : const Color(0xFF4338CA),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final neutralBg = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : AppPalette.brand.withValues(alpha: 0.07);
+    final fg = accent ? Colors.white : AppPalette.brand;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: accent ? AppPalette.brandGradient : null,
+        color: accent ? null : neutralBg,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: accent
+            ? [
+                BoxShadow(
+                  color: AppPalette.brand.withValues(alpha: 0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                )
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: fg),
+                const SizedBox(width: 5),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: fg,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -596,20 +676,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildCategoryChip(
       BuildContext context, String? value, String label, String? selected) {
     final isSelected = value == selected;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(
-          label,
-          style: TextStyle(
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400),
-        ),
-        selected: isSelected,
-        onSelected: (_) =>
-            ref.read(selectedCategoryProvider.notifier).state = value,
-        visualDensity: VisualDensity.compact,
-      ),
+    return _pill(
+      label: label,
+      selected: isSelected,
+      onTap: () => ref.read(selectedCategoryProvider.notifier).state = value,
     );
   }
 
@@ -619,27 +689,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       isScrollControlled: true,
       builder: (_) => ShopDetailSheet(shop: shop, buildingName: buildingName),
     );
-  }
-
-  Color _categoryColor(ShopCategory cat) {
-    switch (cat) {
-      case ShopCategory.food:
-        return const Color(0xFFEF4444);
-      case ShopCategory.retail:
-        return const Color(0xFF8B5CF6);
-      case ShopCategory.services:
-        return const Color(0xFF4F46E5);
-      case ShopCategory.transit:
-        return const Color(0xFF22C55E);
-      case ShopCategory.washroom:
-        return const Color(0xFF06B6D4);
-      case ShopCategory.hotel:
-        return const Color(0xFFF59E0B);
-      case ShopCategory.health:
-        return const Color(0xFFEC4899);
-      case ShopCategory.entertainment:
-        return const Color(0xFFF97316);
-    }
   }
 
   IconData _categoryIcon(ShopCategory cat) {
