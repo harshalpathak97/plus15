@@ -127,6 +127,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
     final selectedBuilding = ref.watch(selectedBuildingProvider);
     final activeRoute = ref.watch(activeRouteProvider);
     final activeRouteDist = ref.watch(activeRouteDistanceProvider);
+    final bridgePaths = ref.watch(bridgePathsProvider).valueOrNull ?? {};
+    final smoothedRoute = ref.watch(smoothedRouteProvider);
     final navigationSession = ref.watch(navigationSessionProvider);
     final walkingSpeed = ref.watch(walkingSpeedProvider);
     final userLocation = ref.watch(locationStreamProvider);
@@ -194,22 +196,22 @@ class _MapScreenState extends ConsumerState<MapScreen>
                       fallbackUrl:
                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     ),
-                    // The +15 network, drawn as crisp vectors from the real
-                    // bridge graph — a soft glow pass beneath bold skywalk
-                    // lines. No raster overlay, sharp at every zoom level.
+                    // The +15 network — grid-following paths imprinted on the
+                    // map. A glow pass beneath bold skywalk lines; each bridge
+                    // follows the street grid rather than cutting diagonally.
                     PolylineLayer(
                       polylines:
-                          _buildNetworkGlow(bridges, buildingMap, activeRoute),
+                          _buildNetworkGlow(bridges, bridgePaths),
                     ),
                     PolylineLayer(
                       polylines: _buildBridgeLines(
-                          bridges, buildingMap, activeRoute, isDark),
+                          bridges, bridgePaths, isDark),
                     ),
-                    if (activeRoute != null && activeRoute.length > 1)
+                    if (smoothedRoute.length > 1)
                       PolylineLayer(
                         polylines: [
-                          _buildRouteGlowPolyline(activeRoute, buildingMap),
-                          _buildRoutePolyline(activeRoute, buildingMap)
+                          _buildRouteGlowPolyline(smoothedRoute),
+                          _buildRoutePolyline(smoothedRoute),
                         ],
                       ),
                     if (_currentZoom >= 13.5)
@@ -530,22 +532,19 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return 2.0;
   }
 
-  /// Crisp, fully-opaque skywalk lines — the hero of the map. Color encodes
+  /// Crisp skywalk lines using real grid-following geometry. Color encodes
   /// status: teal = open, amber = stairs-only / limited access, red = closed.
-  List<Polyline> _buildBridgeLines(List<Bridge> bridges,
-      Map<String, Building> bMap, List<String>? activeRoute, bool isDark) {
+  List<Polyline> _buildBridgeLines(
+    List<Bridge> bridges,
+    Map<String, List<LatLng>> bridgePaths,
+    bool isDark,
+  ) {
     final width = _networkWidth();
     final lines = <Polyline>[];
 
     for (final bridge in bridges) {
-      final from = bMap[bridge.fromBuildingId];
-      final to = bMap[bridge.toBuildingId];
-      if (from == null || to == null) continue;
-
-      final isOnRoute = activeRoute != null &&
-          _isEdgeOnRoute(
-              bridge.fromBuildingId, bridge.toBuildingId, activeRoute);
-      if (isOnRoute) continue; // drawn bolder by the route layer on top
+      final points = bridgePaths[bridge.id];
+      if (points == null || points.length < 2) continue;
 
       final isClosed = bridge.status != 'open';
       final notAccessible = !bridge.isAccessible;
@@ -562,9 +561,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
       }
 
       lines.add(Polyline(
-        points: [LatLng(from.lat, from.lng), LatLng(to.lat, to.lng)],
+        points: points,
         strokeWidth: isClosed ? width * 0.7 : width,
         color: color,
+        strokeCap: StrokeCap.round,
+        strokeJoin: StrokeJoin.round,
         borderStrokeWidth: 1.4,
         borderColor: (isDark ? Colors.black : Colors.white)
             .withValues(alpha: isDark ? 0.35 : 0.65),
@@ -573,59 +574,50 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return lines;
   }
 
-  /// A soft luminous halo beneath the open skywalk lines, giving the network
-  /// the feeling of being lit from within.
-  List<Polyline> _buildNetworkGlow(List<Bridge> bridges,
-      Map<String, Building> bMap, List<String>? activeRoute) {
+  /// Soft luminous halo beneath open skywalk lines using grid-following paths.
+  List<Polyline> _buildNetworkGlow(
+    List<Bridge> bridges,
+    Map<String, List<LatLng>> bridgePaths,
+  ) {
     if (_currentZoom < 13.0) return const [];
     final width = _networkWidth() * 2.8;
     final glow = <Polyline>[];
 
     for (final bridge in bridges) {
       if (bridge.status != 'open') continue;
-      final from = bMap[bridge.fromBuildingId];
-      final to = bMap[bridge.toBuildingId];
-      if (from == null || to == null) continue;
-
-      final isOnRoute = activeRoute != null &&
-          _isEdgeOnRoute(
-              bridge.fromBuildingId, bridge.toBuildingId, activeRoute);
-      if (isOnRoute) continue;
+      final points = bridgePaths[bridge.id];
+      if (points == null || points.length < 2) continue;
 
       glow.add(Polyline(
-        points: [LatLng(from.lat, from.lng), LatLng(to.lat, to.lng)],
+        points: points,
         strokeWidth: width,
+        strokeCap: StrokeCap.round,
+        strokeJoin: StrokeJoin.round,
         color: AppPalette.skywalk.withValues(alpha: 0.14),
       ));
     }
     return glow;
   }
 
-  Polyline _buildRoutePolyline(List<String> route, Map<String, Building> bMap) {
-    final points = route
-        .where((id) => bMap.containsKey(id))
-        .map((id) => LatLng(bMap[id]!.lat, bMap[id]!.lng))
-        .toList();
-
+  Polyline _buildRoutePolyline(List<LatLng> smoothedPoints) {
     return Polyline(
-      points: points,
+      points: smoothedPoints,
       strokeWidth: 6.5,
       color: AppPalette.brand,
+      strokeCap: StrokeCap.round,
+      strokeJoin: StrokeJoin.round,
+      gradientColors: const [AppPalette.brand, AppPalette.skywalk],
       borderStrokeWidth: 2.5,
       borderColor: Colors.white.withValues(alpha: 0.85),
     );
   }
 
-  Polyline _buildRouteGlowPolyline(
-      List<String> route, Map<String, Building> bMap) {
-    final points = route
-        .where((id) => bMap.containsKey(id))
-        .map((id) => LatLng(bMap[id]!.lat, bMap[id]!.lng))
-        .toList();
-
+  Polyline _buildRouteGlowPolyline(List<LatLng> smoothedPoints) {
     return Polyline(
-      points: points,
+      points: smoothedPoints,
       strokeWidth: 16,
+      strokeCap: StrokeCap.round,
+      strokeJoin: StrokeJoin.round,
       color: AppPalette.skywalkBright.withValues(alpha: 0.32),
       borderStrokeWidth: 0,
     );
@@ -819,15 +811,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return 16;
   }
 
-  bool _isEdgeOnRoute(String fromId, String toId, List<String> route) {
-    for (int i = 0; i < route.length - 1; i++) {
-      if ((route[i] == fromId && route[i + 1] == toId) ||
-          (route[i] == toId && route[i + 1] == fromId)) {
-        return true;
-      }
-    }
-    return false;
-  }
 
   Widget _buildHeader(BuildContext context, bool isDark) {
     final theme = Theme.of(context);
