@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../../core/theme/app_palette.dart';
 import '../../../data/models/building.dart';
 import '../../../data/models/shop.dart';
 
@@ -28,12 +29,12 @@ class BuildingTooltip extends StatelessWidget {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF18181B) : Colors.white,
+        color: isDark ? AppPalette.cardDark : Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.06)
-              : const Color(0xFFF1F5F9),
+              : AppPalette.borderLight,
         ),
         boxShadow: [
           BoxShadow(
@@ -87,7 +88,7 @@ class BuildingTooltip extends StatelessWidget {
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: isDark
                                   ? Colors.white.withValues(alpha: 0.5)
-                                  : const Color(0xFF94A3B8),
+                                  : AppPalette.inkMuted,
                             )),
                       ),
                   ],
@@ -96,7 +97,7 @@ class BuildingTooltip extends StatelessWidget {
               Material(
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.06)
-                    : const Color(0xFFF8FAFC),
+                    : AppPalette.surfaceLight,
                 borderRadius: BorderRadius.circular(10),
                 child: InkWell(
                   onTap: onClose,
@@ -108,7 +109,7 @@ class BuildingTooltip extends StatelessWidget {
                         size: 16,
                         color: isDark
                             ? Colors.white.withValues(alpha: 0.5)
-                            : const Color(0xFF94A3B8)),
+                            : AppPalette.inkMuted),
                   ),
                 ),
               ),
@@ -157,7 +158,7 @@ class BuildingTooltip extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.04)
-                    : const Color(0xFFF8FAFC),
+                    : AppPalette.surfaceLight,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -169,7 +170,7 @@ class BuildingTooltip extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: isDark
                           ? Colors.white.withValues(alpha: 0.7)
-                          : const Color(0xFF64748B),
+                          : AppPalette.inkMuted,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -202,7 +203,7 @@ class BuildingTooltip extends StatelessWidget {
                       child: Text(
                         '+${buildingShops.length - 3} more',
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: const Color(0xFF4F46E5),
+                          color: AppPalette.brand,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -220,7 +221,7 @@ class BuildingTooltip extends StatelessWidget {
               label: const Text('Navigate Here',
                   style: TextStyle(fontWeight: FontWeight.w600)),
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF4F46E5),
+                backgroundColor: AppPalette.brand,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -241,21 +242,21 @@ class BuildingTooltip extends StatelessWidget {
   Color _typeColor(String type) {
     switch (type) {
       case 'hotel':
-        return const Color(0xFFF59E0B);
+        return const Color(0xFFD9943B);
       case 'retail':
-        return const Color(0xFF8B5CF6);
+        return const Color(0xFF9A7BC0);
       case 'landmark':
-        return const Color(0xFFEF4444);
+        return const Color(0xFFD96A4A);
       case 'entertainment':
-        return const Color(0xFFF97316);
+        return const Color(0xFFD98843);
       case 'government':
-        return const Color(0xFF06B6D4);
+        return const Color(0xFF4F8DA6);
       case 'convention':
-        return const Color(0xFF10B981);
+        return const Color(0xFF1F8A5B);
       case 'park':
-        return const Color(0xFF22C55E);
+        return const Color(0xFF1F8A5B);
       default:
-        return const Color(0xFF4F46E5);
+        return AppPalette.brand;
     }
   }
 
@@ -287,21 +288,21 @@ class BuildingTooltip extends StatelessWidget {
   Color _amenityColor(String amenity) {
     switch (amenity) {
       case 'food':
-        return const Color(0xFFEF4444);
+        return const Color(0xFFD96A4A);
       case 'retail':
-        return const Color(0xFF8B5CF6);
+        return const Color(0xFF9A7BC0);
       case 'transit':
-        return const Color(0xFF10B981);
+        return const Color(0xFF1F8A5B);
       case 'washroom':
-        return const Color(0xFF06B6D4);
+        return const Color(0xFF4F8DA6);
       case 'hotel':
-        return const Color(0xFFF59E0B);
+        return const Color(0xFFD9943B);
       case 'health':
-        return const Color(0xFFEC4899);
+        return const Color(0xFFC76B9C);
       case 'entertainment':
-        return const Color(0xFFF97316);
+        return const Color(0xFFD98843);
       default:
-        return const Color(0xFF64748B);
+        return AppPalette.inkMuted;
     }
   }
 

@@ -185,10 +185,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     ),
                   ),
                   children: [
+                    // Clean, minimal basemap (CartoDB Positron / Dark Matter).
                     TileLayer(
                       urlTemplate: isDark
                           ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
-                          : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
+                          : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
                       subdomains: const ['a', 'b', 'c', 'd'],
                       userAgentPackageName: 'com.plus15.navigator',
                       maxZoom: 20,
@@ -196,13 +197,21 @@ class _MapScreenState extends ConsumerState<MapScreen>
                       fallbackUrl:
                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     ),
-                    // The +15 network — grid-following paths imprinted on the
-                    // map. A glow pass beneath bold skywalk lines; each bridge
-                    // follows the street grid rather than cutting diagonally.
-                    PolylineLayer(
-                      polylines:
-                          _buildNetworkGlow(bridges, bridgePaths),
+                    // A whisper-thin warm wash turns the cool basemap into
+                    // soft paper — the "warm minimal" identity. Fills the map,
+                    // static and non-interactive so it never eats gestures.
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: ColoredBox(
+                          color: isDark
+                              ? const Color(0xFF1A1815).withValues(alpha: 0.18)
+                              : const Color(0xFFEBDFC9).withValues(alpha: 0.20),
+                        ),
+                      ),
                     ),
+                    // The +15 network — flat, confident emerald lines that
+                    // follow the street grid. No glow, no halos: just a clean,
+                    // legible transit-style network imprinted on the map.
                     PolylineLayer(
                       polylines: _buildBridgeLines(
                           bridges, bridgePaths, isDark),
@@ -210,7 +219,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     if (smoothedRoute.length > 1)
                       PolylineLayer(
                         polylines: [
-                          _buildRouteGlowPolyline(smoothedRoute),
                           _buildRoutePolyline(smoothedRoute),
                         ],
                       ),
@@ -533,7 +541,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
   }
 
   /// Crisp skywalk lines using real grid-following geometry. Color encodes
-  /// status: teal = open, amber = stairs-only / limited access, red = closed.
+  /// status: emerald = open, amber = stairs-only / limited, red = closed.
   List<Polyline> _buildBridgeLines(
     List<Bridge> bridges,
     Map<String, List<LatLng>> bridgePaths,
@@ -567,59 +575,24 @@ class _MapScreenState extends ConsumerState<MapScreen>
         strokeCap: StrokeCap.round,
         strokeJoin: StrokeJoin.round,
         borderStrokeWidth: 1.4,
-        borderColor: (isDark ? Colors.black : Colors.white)
-            .withValues(alpha: isDark ? 0.35 : 0.65),
+        borderColor: (isDark ? AppPalette.surfaceDark : AppPalette.cardLight)
+            .withValues(alpha: isDark ? 0.45 : 0.75),
       ));
     }
     return lines;
   }
 
-  /// Soft luminous halo beneath open skywalk lines using grid-following paths.
-  List<Polyline> _buildNetworkGlow(
-    List<Bridge> bridges,
-    Map<String, List<LatLng>> bridgePaths,
-  ) {
-    if (_currentZoom < 13.0) return const [];
-    final width = _networkWidth() * 2.8;
-    final glow = <Polyline>[];
-
-    for (final bridge in bridges) {
-      if (bridge.status != 'open') continue;
-      final points = bridgePaths[bridge.id];
-      if (points == null || points.length < 2) continue;
-
-      glow.add(Polyline(
-        points: points,
-        strokeWidth: width,
-        strokeCap: StrokeCap.round,
-        strokeJoin: StrokeJoin.round,
-        color: AppPalette.skywalk.withValues(alpha: 0.14),
-      ));
-    }
-    return glow;
-  }
-
+  /// The active route: a single calm, solid emerald line, a touch bolder than
+  /// the network, with a soft paper-colored casing so it reads cleanly on top.
   Polyline _buildRoutePolyline(List<LatLng> smoothedPoints) {
     return Polyline(
       points: smoothedPoints,
-      strokeWidth: 6.5,
+      strokeWidth: 6.0,
       color: AppPalette.brand,
       strokeCap: StrokeCap.round,
       strokeJoin: StrokeJoin.round,
-      gradientColors: const [AppPalette.brand, AppPalette.skywalk],
-      borderStrokeWidth: 2.5,
-      borderColor: Colors.white.withValues(alpha: 0.85),
-    );
-  }
-
-  Polyline _buildRouteGlowPolyline(List<LatLng> smoothedPoints) {
-    return Polyline(
-      points: smoothedPoints,
-      strokeWidth: 16,
-      strokeCap: StrokeCap.round,
-      strokeJoin: StrokeJoin.round,
-      color: AppPalette.skywalkBright.withValues(alpha: 0.32),
-      borderStrokeWidth: 0,
+      borderStrokeWidth: 3.0,
+      borderColor: AppPalette.cardLight.withValues(alpha: 0.95),
     );
   }
 
@@ -636,12 +609,12 @@ class _MapScreenState extends ConsumerState<MapScreen>
         height: 30,
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF10B981),
+            color: AppPalette.origin,
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 3),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF10B981).withValues(alpha: 0.4),
+                color: AppPalette.origin.withValues(alpha: 0.4),
                 blurRadius: 10,
                 spreadRadius: 2,
               ),
@@ -658,12 +631,12 @@ class _MapScreenState extends ConsumerState<MapScreen>
         height: 34,
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xFFEF4444),
+            color: AppPalette.destination,
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 3),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFEF4444).withValues(alpha: 0.4),
+                color: AppPalette.destination.withValues(alpha: 0.4),
                 blurRadius: 10,
                 spreadRadius: 2,
               ),
@@ -814,11 +787,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
   Widget _buildHeader(BuildContext context, bool isDark) {
     final theme = Theme.of(context);
-    final surface =
-        (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.82);
+    final surface = (isDark ? AppPalette.cardDark : AppPalette.cardLight)
+        .withValues(alpha: 0.94);
     final border = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
+        ? Colors.white.withValues(alpha: 0.06)
+        : AppPalette.borderLight;
 
     return Row(
       children: [
@@ -827,13 +800,13 @@ class _MapScreenState extends ConsumerState<MapScreen>
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            gradient: AppPalette.brandGradient,
+            color: AppPalette.brand,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: AppPalette.brand.withValues(alpha: 0.35),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
+                color: AppPalette.ink.withValues(alpha: 0.12),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -852,7 +825,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
               child: Material(
                 color: surface,
                 child: InkWell(
@@ -868,10 +841,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
                       border: Border.all(color: border),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black
-                              .withValues(alpha: isDark ? 0.32 : 0.08),
-                          blurRadius: 20,
-                          offset: const Offset(0, 6),
+                          color: AppPalette.ink
+                              .withValues(alpha: isDark ? 0.22 : 0.06),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
@@ -966,7 +939,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: (isDark ? const Color(0xFF111827) : Colors.white)
+        color: (isDark ? AppPalette.cardDark : Colors.white)
             .withValues(alpha: 0.94),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
@@ -994,8 +967,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: session.status == NavigationStatus.arrived
-                      ? const Color(0xFF10B981)
-                      : const Color(0xFF4F46E5),
+                      ? AppPalette.origin
+                      : AppPalette.brand,
                 ),
               ),
               const SizedBox(width: 8),
@@ -1013,7 +986,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 style: TextStyle(
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.62)
-                      : const Color(0xFF64748B),
+                      : AppPalette.inkMuted,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1027,8 +1000,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
             borderRadius: BorderRadius.circular(8),
             backgroundColor: isDark
                 ? Colors.white.withValues(alpha: 0.12)
-                : const Color(0xFFE2E8F0),
-            valueColor: const AlwaysStoppedAnimation(Color(0xFF4F46E5)),
+                : AppPalette.borderLight,
+            valueColor: const AlwaysStoppedAnimation(AppPalette.brand),
           ),
           const SizedBox(height: 8),
           Text(
@@ -1042,7 +1015,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
               fontWeight: FontWeight.w600,
               color: isDark
                   ? Colors.white.withValues(alpha: 0.82)
-                  : const Color(0xFF334155),
+                  : AppPalette.ink,
             ),
           ),
         ],
@@ -1057,7 +1030,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: (isDark ? const Color(0xFF111827) : Colors.white)
+        color: (isDark ? AppPalette.cardDark : Colors.white)
             .withValues(alpha: 0.94),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
@@ -1075,7 +1048,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
       ),
       child: Row(
         children: [
-          const Icon(Icons.login_rounded, color: Color(0xFF22C55E), size: 18),
+          const Icon(Icons.login_rounded, color: AppPalette.origin, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1136,9 +1109,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
       {bool accent = false}) {
     return Material(
       color: accent
-          ? const Color(0xFF4F46E5)
+          ? AppPalette.brand
           : isDark
-              ? const Color(0xFF18181B).withValues(alpha: 0.92)
+              ? AppPalette.cardDark.withValues(alpha: 0.92)
               : Colors.white.withValues(alpha: 0.95),
       borderRadius: BorderRadius.circular(14),
       elevation: 0,
@@ -1163,7 +1136,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
             boxShadow: [
               BoxShadow(
                 color: accent
-                    ? const Color(0xFF4F46E5).withValues(alpha: 0.3)
+                    ? AppPalette.brand.withValues(alpha: 0.3)
                     : Colors.black.withValues(alpha: 0.08),
                 blurRadius: 12,
                 offset: const Offset(0, 2),
@@ -1175,8 +1148,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
               color: accent
                   ? Colors.white
                   : isDark
-                      ? const Color(0xFFA1A1AA)
-                      : const Color(0xFF52525B)),
+                      ? AppPalette.inkMutedDark
+                      : AppPalette.inkMuted),
         ),
       ),
     );
@@ -1199,7 +1172,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Material(
-            color: (isDark ? const Color(0xFF18181B) : Colors.white)
+            color: (isDark ? AppPalette.cardDark : Colors.white)
                 .withValues(alpha: 0.95),
             borderRadius: BorderRadius.circular(14),
             elevation: 0,
@@ -1221,7 +1194,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.bolt_rounded,
-                        size: 16, color: Color(0xFFF59E0B)),
+                        size: 16, color: AppPalette.warning),
                     const SizedBox(width: 6),
                     Text(toBldg?.name ?? r.name,
                         style: const TextStyle(
@@ -1264,17 +1237,13 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF4F46E5), Color(0xFF0EA5B7)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: AppPalette.brand,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF4F46E5).withValues(alpha: 0.35),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
+            color: AppPalette.ink.withValues(alpha: 0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -1383,7 +1352,7 @@ class _PulsingLocationDotState extends State<_PulsingLocationDot>
               height: 28 + (pulse * 16),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF4F46E5)
+                color: AppPalette.brand
                     .withValues(alpha: 0.15 * (1 - pulse)),
               ),
             ),
@@ -1392,11 +1361,11 @@ class _PulsingLocationDotState extends State<_PulsingLocationDot>
               height: 16,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF4F46E5),
+                color: AppPalette.brand,
                 border: Border.all(color: Colors.white, width: 3),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF4F46E5).withValues(alpha: 0.4),
+                    color: AppPalette.brand.withValues(alpha: 0.4),
                     blurRadius: 8,
                     spreadRadius: 1,
                   ),
@@ -1433,36 +1402,28 @@ class _BuildingDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Color dotColor;
-    if (type == 'hotel') {
-      dotColor = const Color(0xFFF59E0B);
-    } else if (type == 'retail' || type == 'entertainment') {
-      dotColor = const Color(0xFF8B5CF6);
-    } else if (type == 'landmark') {
-      dotColor = const Color(0xFFEF4444);
+    if (type == 'hotel' ||
+        type == 'retail' ||
+        type == 'entertainment' ||
+        type == 'landmark') {
+      dotColor = AppPalette.typeColor(type);
     } else if (hasFood) {
-      dotColor = const Color(0xFFEF4444);
+      dotColor = AppPalette.destination;
     } else {
-      dotColor = isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8);
+      dotColor = isDark ? AppPalette.inkMutedDark : AppPalette.inkMuted;
     }
 
     return Center(
       child: Container(
-        width: 10,
-        height: 10,
+        width: 9,
+        height: 9,
         decoration: BoxDecoration(
           color: dotColor,
           shape: BoxShape.circle,
           border: Border.all(
-            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+            color: isDark ? AppPalette.surfaceDark : AppPalette.cardLight,
             width: 2,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: dotColor.withValues(alpha: 0.3),
-              blurRadius: 4,
-              spreadRadius: 0,
-            ),
-          ],
         ),
       ),
     );
@@ -1491,23 +1452,23 @@ class _BuildingChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bgColor = isSelected
-        ? const Color(0xFF4F46E5)
+        ? AppPalette.brand
         : isOnRoute
-            ? const Color(0xFF4F46E5).withValues(alpha: 0.9)
+            ? AppPalette.brand.withValues(alpha: 0.9)
             : isDark
-                ? const Color(0xFF18181B).withValues(alpha: 0.92)
+                ? AppPalette.cardDark.withValues(alpha: 0.92)
                 : Colors.white.withValues(alpha: 0.95);
 
     final textColor = isSelected || isOnRoute
         ? Colors.white
         : isDark
-            ? const Color(0xFFE4E4E7)
-            : const Color(0xFF27272A);
+            ? AppPalette.inkDark
+            : AppPalette.ink;
 
     final borderColor = isSelected
-        ? const Color(0xFF4F46E5)
+        ? AppPalette.brand
         : isOnRoute
-            ? const Color(0xFF60A5FA)
+            ? AppPalette.brandSoft
             : isDark
                 ? Colors.white.withValues(alpha: 0.08)
                 : Colors.black.withValues(alpha: 0.06);
@@ -1522,7 +1483,7 @@ class _BuildingChip extends StatelessWidget {
           boxShadow: [
             if (isSelected)
               BoxShadow(
-                color: const Color(0xFF4F46E5).withValues(alpha: 0.3),
+                color: AppPalette.brand.withValues(alpha: 0.3),
                 blurRadius: 14,
                 spreadRadius: 1,
               )
@@ -1543,7 +1504,7 @@ class _BuildingChip extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 4),
                 child: Icon(Icons.hotel_rounded,
                     size: 11,
-                    color: isSelected ? Colors.white : const Color(0xFFF59E0B)),
+                    color: isSelected ? Colors.white : AppPalette.warning),
               ),
             if (type == 'retail' || type == 'entertainment')
               Padding(
@@ -1553,21 +1514,21 @@ class _BuildingChip extends StatelessWidget {
                         ? Icons.theaters_rounded
                         : Icons.shopping_bag_rounded,
                     size: 11,
-                    color: isSelected ? Colors.white : const Color(0xFF8B5CF6)),
+                    color: isSelected ? Colors.white : const Color(0xFF9A7BC0)),
               ),
             if (hasTransit)
               Padding(
                 padding: const EdgeInsets.only(right: 4),
                 child: Icon(Icons.train_rounded,
                     size: 11,
-                    color: isSelected ? Colors.white : const Color(0xFF10B981)),
+                    color: isSelected ? Colors.white : AppPalette.origin),
               ),
             if (type == 'landmark')
               Padding(
                 padding: const EdgeInsets.only(right: 4),
                 child: Icon(Icons.star_rounded,
                     size: 11,
-                    color: isSelected ? Colors.white : const Color(0xFFF59E0B)),
+                    color: isSelected ? Colors.white : AppPalette.warning),
               ),
             Flexible(
               child: Text(
@@ -1591,7 +1552,7 @@ class _BuildingChip extends StatelessWidget {
                   width: 5,
                   height: 5,
                   decoration: const BoxDecoration(
-                    color: Color(0xFFEF4444),
+                    color: AppPalette.destination,
                     shape: BoxShape.circle,
                   ),
                 ),

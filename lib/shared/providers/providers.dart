@@ -7,7 +7,6 @@ import '../../data/datasources/local_storage.dart';
 import '../../data/models/building.dart';
 import '../../data/models/bridge.dart';
 import '../../data/models/entry_point.dart';
-import '../../data/models/map_overlay_config.dart';
 import '../../data/models/shop.dart';
 import '../../data/models/saved_route.dart';
 import '../../data/graph/plus15_graph.dart';
@@ -31,10 +30,6 @@ final shopsProvider = FutureProvider<List<Shop>>((ref) {
 
 final entryPointsProvider = FutureProvider<List<EntryPoint>>((ref) {
   return ref.read(mapDataSourceProvider).loadEntryPoints();
-});
-
-final overlayConfigProvider = FutureProvider<MapOverlayConfig>((ref) {
-  return ref.read(mapDataSourceProvider).loadOverlayConfig();
 });
 
 final graphProvider = FutureProvider<Plus15Graph>((ref) async {
