@@ -53,4 +53,18 @@ class MapDataSource {
     _overlayConfig = MapOverlayConfig.fromJson(data);
     return _overlayConfig!;
   }
+
+  /// Returns the per-bridge intermediate waypoints from bridge_geometry.json.
+  /// Keys are bridge IDs; each value is a list of [lat, lng] pairs.
+  Future<Map<String, List<List<double>>>> loadBridgeGeometry() async {
+    final raw =
+        await rootBundle.loadString('assets/data/bridge_geometry.json');
+    final map = json.decode(raw) as Map<String, dynamic>;
+    return map.map((id, waypoints) {
+      final pts = (waypoints as List)
+          .map((p) => [(p as List)[0] as double, p[1] as double])
+          .toList();
+      return MapEntry(id, pts);
+    });
+  }
 }

@@ -12,6 +12,7 @@ import '../../data/models/shop.dart';
 import '../../data/models/saved_route.dart';
 import '../../data/graph/plus15_graph.dart';
 import '../../data/graph/pathfinder.dart';
+import '../../features/map/utils/path_utils.dart';
 
 final mapDataSourceProvider = Provider((_) => MapDataSource());
 final localStorageProvider = Provider((_) => LocalStorage());
@@ -326,3 +327,89 @@ final userLocationProvider = Provider<AsyncValue<LatLng?>>((ref) {
 });
 
 final mapZoomProvider = StateProvider<double>((ref) => 15.2);
+
+/// Full resolved point list for every bridge: [fromLatLng, ...waypoints, toLatLng].
+/// Uses bridge_geometry.json overrides first, falls back to grid-inferred L-shape.
+/// Computed once per data load — survives pan/zoom.
+final bridgePathsProvider =
+    FutureProvider<Map<String, List<LatLng>>>((ref) async {
+  final buildings = await ref.watch(buildingsProvider.future);
+  final bridges = await ref.watch(bridgesProvider.future);
+  final overrides =
+      await ref.read(mapDataSourceProvider).loadBridgeGeometry();
+  final bMap = {for (final b in buildings) b.id: b};
+
+  return {
+    for (final br in bridges)
+      br.id: _resolvedBridgePath(br, bMap, overrides),
+  };
+});
+
+List<LatLng> _resolvedBridgePath(
+  Bridge br,
+  Map<String, Building> bMap,
+  Map<String, List<List<double>>> overrides,
+) {
+  final f = bMap[br.fromBuildingId];
+  final t = bMap[br.toBuildingId];
+  if (f == null || t == null) return const [];
+
+  final fromPt = LatLng(f.lat, f.lng);
+  final toPt = LatLng(t.lat, t.lng);
+
+  final override = overrides[br.id];
+  if (override != null && override.isNotEmpty) {
+    return [
+      fromPt,
+      ...override.map((p) => LatLng(p[0], p[1])),
+      toPt,
+    ];
+  }
+
+  final inferred = inferGridWaypoint(fromPt, toPt);
+  return [fromPt, ...inferred, toPt];
+}
+
+/// Smoothed active-route polyline: threads the resolved bridge waypoints
+/// in route order, deduplicates shared building nodes, then applies
+/// Catmull-Rom subdivision. Re-computes only when the route changes.
+final smoothedRouteProvider = Provider<List<LatLng>>((ref) {
+  final route = ref.watch(activeRouteProvider);
+  if (route == null || route.length < 2) return const [];
+
+  final paths = ref.watch(bridgePathsProvider).valueOrNull;
+  final graph = ref.watch(graphProvider).valueOrNull;
+  if (graph == null) return const [];
+  final bMap = graph.buildingMap;
+
+  final pts = <LatLng>[];
+  for (var i = 0; i < route.length - 1; i++) {
+    final fromId = route[i];
+    final toId = route[i + 1];
+    final fb = bMap[fromId];
+    final tb = bMap[toId];
+    if (fb == null || tb == null) continue;
+
+    final bridge = graph.getBridge(fromId, toId);
+    final segment = (bridge != null && paths != null)
+        ? paths[bridge.id]
+        : null;
+
+    if (segment != null && segment.isNotEmpty) {
+      // Ensure the segment runs from→to (may be stored in either direction).
+      final forward = segment.first.latitude == fb.lat &&
+          segment.first.longitude == fb.lng;
+      final ordered = forward ? segment : segment.reversed.toList();
+      if (pts.isEmpty) {
+        pts.addAll(ordered);
+      } else {
+        pts.addAll(ordered.skip(1));
+      }
+    } else {
+      if (pts.isEmpty) pts.add(LatLng(fb.lat, fb.lng));
+      pts.add(LatLng(tb.lat, tb.lng));
+    }
+  }
+
+  return catmullRomSmooth(pts);
+});
