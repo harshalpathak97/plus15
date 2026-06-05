@@ -4,16 +4,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../data/models/saved_route.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/screen_header.dart';
 
 class SavedRoutesScreen extends ConsumerWidget {
   const SavedRoutesScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final savedRoutes = ref.watch(savedRoutesProvider);
     final buildingsAsync = ref.watch(buildingsProvider);
 
@@ -24,20 +25,9 @@ class SavedRoutesScreen extends ConsumerWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Saved Routes', style: theme.textTheme.displayMedium)
-                      .animate()
-                      .fadeIn(duration: 400.ms)
-                      .slideX(begin: -0.1, end: 0),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${savedRoutes.length} route${savedRoutes.length != 1 ? 's' : ''} saved',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.textTheme.bodySmall?.color),
-                  ).animate().fadeIn(duration: 400.ms, delay: 100.ms),
-                ],
+              child: ScreenHeader(
+                'Saved Routes',
+                '${savedRoutes.length} route${savedRoutes.length != 1 ? 's' : ''} saved',
               ),
             ),
             const SizedBox(height: 16),
@@ -53,7 +43,8 @@ class SavedRoutesScreen extends ConsumerWidget {
                           for (final b in buildings) b.id: b
                         };
                         return ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 108),
+                          padding: const EdgeInsets.fromLTRB(
+                              16, 0, 16, AppSpacing.bottomScrollClearance),
                           itemCount: savedRoutes.length,
                           itemBuilder: (context, index) {
                             final route = savedRoutes[index];

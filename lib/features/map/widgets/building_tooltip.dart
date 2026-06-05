@@ -9,12 +9,17 @@ class BuildingTooltip extends StatelessWidget {
   final VoidCallback onNavigateHere;
   final VoidCallback onClose;
 
+  /// When true, renders just the content column with no card chrome or entrance
+  /// animation — for use inside a bottom sheet that already provides those.
+  final bool embedded;
+
   const BuildingTooltip({
     super.key,
     required this.building,
     required this.shops,
     required this.onNavigateHere,
     required this.onClose,
+    this.embedded = false,
   });
 
   @override
@@ -23,6 +28,14 @@ class BuildingTooltip extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final buildingShops =
         shops.where((s) => s.buildingId == building.id).toList();
+
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: _children(context, theme, isDark, buildingShops),
+    );
+
+    if (embedded) return content;
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -48,10 +61,16 @@ class BuildingTooltip extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: content,
+    )
+        .animate()
+        .fadeIn(duration: 250.ms)
+        .slideY(begin: 0.08, end: 0, duration: 250.ms, curve: Curves.easeOutCubic);
+  }
+
+  List<Widget> _children(BuildContext context, ThemeData theme, bool isDark,
+      List<Shop> buildingShops) {
+    return [
           Row(
             children: [
               Container(
@@ -230,12 +249,7 @@ class BuildingTooltip extends StatelessWidget {
               ),
             ),
           ),
-        ],
-      ),
-    )
-        .animate()
-        .fadeIn(duration: 250.ms)
-        .slideY(begin: 0.08, end: 0, duration: 250.ms, curve: Curves.easeOutCubic);
+        ];
   }
 
   Color _typeColor(String type) {

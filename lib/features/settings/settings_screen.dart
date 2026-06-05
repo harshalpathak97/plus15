@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/screen_header.dart';
 import '../../shared/widgets/section_header.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -20,18 +22,10 @@ class SettingsScreen extends ConsumerWidget {
     return Scaffold(
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 108),
+          padding: const EdgeInsets.fromLTRB(
+              16, 16, 16, AppSpacing.bottomScrollClearance),
           children: [
-            Text('Settings', style: theme.textTheme.displayMedium)
-                .animate()
-                .fadeIn(duration: 400.ms)
-                .slideX(begin: -0.1, end: 0),
-            const SizedBox(height: 4),
-            Text('Customize your experience',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.textTheme.bodySmall?.color))
-                .animate()
-                .fadeIn(duration: 400.ms, delay: 100.ms),
+            const ScreenHeader('Settings', 'Customize your experience'),
             const SizedBox(height: 24),
             const SectionHeader('Appearance'),
             const SizedBox(height: 10),

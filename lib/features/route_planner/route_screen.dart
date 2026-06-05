@@ -6,10 +6,12 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../data/models/building.dart';
 import '../../data/models/saved_route.dart';
 import '../../data/graph/pathfinder.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/widgets/screen_header.dart';
 import 'widgets/route_option_card.dart';
 import 'widgets/step_list.dart';
 
@@ -38,18 +40,11 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(child: Text('Error: $e')),
           data: (buildings) => ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 108),
+            padding: const EdgeInsets.fromLTRB(
+                16, 16, 16, AppSpacing.bottomScrollClearance),
             children: [
-              Text('Route Planner', style: theme.textTheme.displayMedium)
-                  .animate()
-                  .fadeIn(duration: 400.ms)
-                  .slideX(begin: -0.1, end: 0),
-              const SizedBox(height: 4),
-              Text('Find the best path through Plus 15',
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: theme.textTheme.bodySmall?.color))
-                  .animate()
-                  .fadeIn(duration: 400.ms, delay: 100.ms),
+              const ScreenHeader(
+                  'Route Planner', 'Find the best path through Plus 15'),
               const SizedBox(height: 20),
               _buildLocationSelector(context, buildings, true, from,
                       allowUseMyLocation: true)
