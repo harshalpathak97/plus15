@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Build artifacts should never be committed — build them from source
+*.apk
+*.aab
+*.ipa
