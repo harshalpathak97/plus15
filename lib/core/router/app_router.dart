@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/app_palette.dart';
+import '../theme/app_spacing.dart';
 import '../../features/map/map_screen.dart';
 import '../../features/search/search_screen.dart';
 import '../../features/route_planner/route_screen.dart';
@@ -98,9 +99,9 @@ class _GlassNavBar extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(26),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
           child: Container(
-            height: 66,
+            height: AppDims.navBarHeight,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: barColor,

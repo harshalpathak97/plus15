@@ -7,14 +7,14 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
-import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../data/models/building.dart';
 import '../../data/models/bridge.dart';
 import '../../data/models/entry_point.dart';
 import '../../shared/providers/providers.dart';
 import 'services/course_tracker.dart';
-import 'widgets/building_tooltip.dart';
+import 'widgets/map_bottom_sheet.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -123,23 +123,19 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
     final buildingsAsync = ref.watch(buildingsProvider);
     final bridgesAsync = ref.watch(bridgesProvider);
-    final shopsAsync = ref.watch(shopsProvider);
     final selectedBuilding = ref.watch(selectedBuildingProvider);
     final activeRoute = ref.watch(activeRouteProvider);
-    final activeRouteDist = ref.watch(activeRouteDistanceProvider);
     final bridgePaths = ref.watch(bridgePathsProvider).valueOrNull ?? {};
     final smoothedRoute = ref.watch(smoothedRouteProvider);
-    final navigationSession = ref.watch(navigationSessionProvider);
-    final walkingSpeed = ref.watch(walkingSpeedProvider);
     final userLocation = ref.watch(locationStreamProvider);
     final displayUserLocation =
         _smoothedUserLocation ?? userLocation.valueOrNull;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // The Scaffold uses extendBody, so the map paints behind the floating
-    // glass nav bar. Bottom-anchored overlays are lifted to clear it.
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-    final navClear = 66 + (bottomInset > 0 ? bottomInset : 14) + 16;
+    // The map fills the screen; controls ride just above the sheet's resting
+    // (idle) peek, which itself clears the floating nav bar.
+    final controlsBottom =
+        MediaQuery.of(context).size.height * AppDims.sheetIdle + 12;
 
     return Scaffold(
       body: buildingsAsync.when(
@@ -239,77 +235,15 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 ),
                 Positioned(
                   right: 16,
-                  bottom: selectedBuilding != null
-                      ? navClear + 300
-                      : (activeRoute != null ? navClear + 92 : navClear + 8),
+                  bottom: controlsBottom,
                   child: _buildMapControls(context, isDark, userLocation),
                 ),
-                if (navigationSession.isActive)
-                  Positioned(
-                    top: MediaQuery.of(context).padding.top + 88,
-                    left: 16,
-                    right: 16,
-                    child: _buildNavigationStatusCard(
-                      context,
-                      navigationSession,
-                      buildingMap,
-                    ),
-                  ),
-                if (_hasRoutineRoutes())
-                  Positioned(
-                    left: 16,
-                    bottom: activeRoute != null ? navClear + 92 : navClear + 8,
-                    child: _buildQuickRoutes(context, buildings),
-                  ),
-                if (navigationSession.status ==
-                        NavigationStatus.headingToEntry &&
-                    _guidanceEntryPoint != null &&
-                    _guidanceEntryDistanceM != null)
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    bottom: activeRoute != null ? navClear + 96 : navClear + 10,
-                    child: _buildEntryGuidanceChip(context),
-                  ),
-                if (activeRoute != null)
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    bottom: navClear,
-                    child: _buildRouteBar(
-                      context,
-                      navigationSession.isActive
-                          ? navigationSession.remainingDistanceM
-                          : activeRouteDist,
-                      buildings,
-                      activeRoute,
-                      walkingSpeed,
-                    ),
-                  ),
-                if (selectedBuilding != null)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: activeRoute != null ? navClear + 72 : navClear - 8,
-                    child: shopsAsync.when(
-                      data: (shops) => BuildingTooltip(
-                        building: selectedBuilding,
-                        shops: shops,
-                        onNavigateHere: () {
-                          ref.read(routeToProvider.notifier).state =
-                              selectedBuilding;
-                          ref.read(selectedBuildingProvider.notifier).state =
-                              null;
-                          context.go('/route');
-                        },
-                        onClose: () => ref
-                            .read(selectedBuildingProvider.notifier)
-                            .state = null,
-                      ),
-                      loading: () => const SizedBox.shrink(),
-                      error: (_, __) => const SizedBox.shrink(),
-                    ),
-                  ),
+                MapBottomSheet(
+                  guidanceEntryPoint: _guidanceEntryPoint,
+                  guidanceEntryDistanceM: _guidanceEntryDistanceM,
+                  onStopNavigation: _stopNavigation,
+                  onStartQuickRoute: _startQuickRoute,
+                ),
               ],
             );
           },
@@ -566,9 +500,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
         color: color,
         strokeCap: StrokeCap.round,
         strokeJoin: StrokeJoin.round,
-        borderStrokeWidth: 1.4,
+        borderStrokeWidth: 1.0,
         borderColor: (isDark ? Colors.black : Colors.white)
-            .withValues(alpha: isDark ? 0.35 : 0.65),
+            .withValues(alpha: isDark ? 0.35 : 0.7),
       ));
     }
     return lines;
@@ -580,7 +514,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     Map<String, List<LatLng>> bridgePaths,
   ) {
     if (_currentZoom < 13.0) return const [];
-    final width = _networkWidth() * 2.8;
+    final width = _networkWidth() * 1.9;
     final glow = <Polyline>[];
 
     for (final bridge in bridges) {
@@ -593,7 +527,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
         strokeWidth: width,
         strokeCap: StrokeCap.round,
         strokeJoin: StrokeJoin.round,
-        color: AppPalette.skywalk.withValues(alpha: 0.14),
+        color: AppPalette.skywalk.withValues(alpha: 0.10),
       ));
     }
     return glow;
@@ -932,165 +866,17 @@ class _MapScreenState extends ConsumerState<MapScreen>
     );
   }
 
-  Widget _buildNavigationStatusCard(BuildContext context,
-      NavigationSession session, Map<String, Building> buildingMap) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final nextName = session.nextNodeId == null
-        ? null
-        : buildingMap[session.nextNodeId!]?.name ?? session.nextNodeId;
-    final destinationName = session.destinationId == null
-        ? null
-        : buildingMap[session.destinationId!]?.name ?? session.destinationId;
-    final total = session.totalDistanceM <= 0 ? 1.0 : session.totalDistanceM;
-    final progress = (1 - (session.remainingDistanceM / total)).clamp(0.0, 1.0);
-
-    String statusText;
-    switch (session.status) {
-      case NavigationStatus.headingToEntry:
-        statusText = 'Heading to nearest entry';
-        break;
-      case NavigationStatus.rerouting:
-        statusText = 'Re-routing on +15 network';
-        break;
-      case NavigationStatus.arrived:
-        statusText = 'Arrived at destination';
-        break;
-      case NavigationStatus.onCourse:
-        statusText = 'On course';
-        break;
-      case NavigationStatus.inactive:
-        statusText = 'Navigation inactive';
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        color: (isDark ? const Color(0xFF111827) : Colors.white)
-            .withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.black.withValues(alpha: 0.06),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: session.status == NavigationStatus.arrived
-                      ? const Color(0xFF10B981)
-                      : const Color(0xFF4F46E5),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  statusText,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-              Text(
-                '${(session.confidence * 100).round()}% conf',
-                style: TextStyle(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.62)
-                      : const Color(0xFF64748B),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: progress,
-            minHeight: 7,
-            borderRadius: BorderRadius.circular(8),
-            backgroundColor: isDark
-                ? Colors.white.withValues(alpha: 0.12)
-                : const Color(0xFFE2E8F0),
-            valueColor: const AlwaysStoppedAnimation(Color(0xFF4F46E5)),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            nextName == null
-                ? (destinationName ?? 'Destination')
-                : 'Next: $nextName',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.82)
-                  : const Color(0xFF334155),
-            ),
-          ),
-        ],
-      ),
-    ).animate().fadeIn(duration: 260.ms).slideY(begin: -0.06, end: 0);
-  }
-
-  Widget _buildEntryGuidanceChip(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final entry = _guidanceEntryPoint!;
-    final distanceM = (_guidanceEntryDistanceM ?? 0).round();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: (isDark ? const Color(0xFF111827) : Colors.white)
-            .withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.black.withValues(alpha: 0.06),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.login_rounded, color: Color(0xFF22C55E), size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Nearest entry: ${entry.name} ($distanceM m)',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    ).animate().fadeIn(duration: 220.ms).slideY(begin: 0.08, end: 0);
+  /// Tears down an active route + navigation session. Mirrors the provider
+  /// writes the old route banner's close button performed, including resetting
+  /// the entry-point guidance held on this State.
+  void _stopNavigation() {
+    ref.read(activeRouteProvider.notifier).state = null;
+    ref.read(activeRouteDistanceProvider.notifier).state = 0;
+    ref.read(navigationSessionProvider.notifier).stop();
+    _guidanceEntryPoint = null;
+    _guidanceEntryDistanceM = null;
+    _offRouteStrikes = 0;
+    if (mounted) setState(() {});
   }
 
   Widget _buildMapControls(
@@ -1182,60 +968,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
     );
   }
 
-  bool _hasRoutineRoutes() {
-    return ref.watch(savedRoutesProvider).any((r) => r.isRoutine);
-  }
-
-  Widget _buildQuickRoutes(BuildContext context, List<Building> buildings) {
-    final routines =
-        ref.watch(savedRoutesProvider).where((r) => r.isRoutine).toList();
-    if (routines.isEmpty) return const SizedBox.shrink();
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: routines.take(2).map((r) {
-        final toBldg = buildings.where((b) => b.id == r.toId).firstOrNull;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Material(
-            color: (isDark ? const Color(0xFF18181B) : Colors.white)
-                .withValues(alpha: 0.95),
-            borderRadius: BorderRadius.circular(14),
-            elevation: 0,
-            child: InkWell(
-              onTap: () => _startQuickRoute(r.fromId, r.toId, r.routeType),
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : Colors.black.withValues(alpha: 0.06),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.bolt_rounded,
-                        size: 16, color: Color(0xFFF59E0B)),
-                    const SizedBox(width: 6),
-                    Text(toBldg?.name ?? r.name,
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w600)),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    ).animate().fadeIn(duration: 400.ms, delay: 400.ms);
-  }
-
   void _startQuickRoute(String fromId, String toId, String mode) async {
     final pathfinder = await ref.read(pathfinderProvider.future);
     final result = pathfinder.findRoute(fromId, toId, mode: mode);
@@ -1254,91 +986,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
     }
   }
 
-  Widget _buildRouteBar(BuildContext context, double distance,
-      List<Building> buildings, List<String> route, double walkingSpeedKmh) {
-    final fromBldg = buildings.where((b) => b.id == route.first).firstOrNull;
-    final toBldg = buildings.where((b) => b.id == route.last).firstOrNull;
-    final timeMin = AppConstants.estimateWalkTimeMinutes(distance,
-        speedKmh: walkingSpeedKmh);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF4F46E5), Color(0xFF0EA5B7)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF4F46E5).withValues(alpha: 0.35),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.navigation_rounded,
-                color: Colors.white, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${fromBldg?.name ?? '?'} → ${toBldg?.name ?? '?'}',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${distance.toInt()}m · ~${timeMin.ceil()} min · ${route.length - 1} bridges',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.75),
-                      fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          Material(
-            color: Colors.white.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(10),
-            child: InkWell(
-              onTap: () {
-                ref.read(activeRouteProvider.notifier).state = null;
-                ref.read(activeRouteDistanceProvider.notifier).state = 0;
-                ref.read(navigationSessionProvider.notifier).stop();
-                _guidanceEntryPoint = null;
-                _guidanceEntryDistanceM = null;
-                _offRouteStrikes = 0;
-              },
-              borderRadius: BorderRadius.circular(10),
-              child: const SizedBox(
-                width: 36,
-                height: 36,
-                child: Icon(Icons.close_rounded, color: Colors.white, size: 18),
-              ),
-            ),
-          ),
-        ],
-      ),
-    ).animate().fadeIn(duration: 300.ms).slideY(
-        begin: 0.3, end: 0, duration: 300.ms, curve: Curves.easeOutCubic);
-  }
 }
 
 class _PulsingLocationDot extends StatefulWidget {

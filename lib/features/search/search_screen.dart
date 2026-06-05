@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../data/models/building.dart';
 import '../../data/models/bridge.dart';
 import '../../data/models/shop.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/widgets/app_pill.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/screen_header.dart';
 import '../shop_detail/shop_detail_sheet.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
@@ -35,7 +37,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final shopsAsync = ref.watch(shopsProvider);
     final buildingsAsync = ref.watch(buildingsProvider);
     final bridgesAsync = ref.watch(bridgesProvider);
@@ -51,16 +52,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Search', style: theme.textTheme.displayMedium)
-                      .animate()
-                      .fadeIn(duration: 400.ms)
-                      .slideX(begin: -0.1, end: 0),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Explore shops and services with live smart filters',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.textTheme.bodySmall?.color),
-                  ).animate().fadeIn(duration: 400.ms, delay: 100.ms),
+                  const ScreenHeader(
+                      'Search', 'Explore shops and services with live filters'),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _searchController,
@@ -127,25 +120,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          _pill(
+          AppPill(
             label: 'Open now',
             icon: Icons.schedule_rounded,
             selected: _filterOpenNow,
             onTap: () => setState(() => _filterOpenNow = !_filterOpenNow),
           ),
-          _pill(
+          AppPill(
             label: 'Food',
             icon: Icons.restaurant_rounded,
             selected: _filterFood,
             onTap: () => setState(() => _filterFood = !_filterFood),
           ),
-          _pill(
+          AppPill(
             label: 'Transit',
             icon: Icons.train_rounded,
             selected: _filterTransit,
             onTap: () => setState(() => _filterTransit = !_filterTransit),
           ),
-          _pill(
+          AppPill(
             label: 'Accessible',
             icon: Icons.accessible_rounded,
             selected: _filterAccessible,
@@ -153,76 +146,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 setState(() => _filterAccessible = !_filterAccessible),
           ),
         ],
-      ),
-    );
-  }
-
-  /// A custom pill used for quick filters and category chips: a brand-gradient
-  /// fill when selected, a bordered surface otherwise, with a subtle scale.
-  Widget _pill({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-    IconData? icon,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? AppPalette.cardDark : Colors.white;
-    final border = isDark ? AppPalette.borderDark : AppPalette.borderLight;
-    final textColor = selected
-        ? Colors.white
-        : (isDark ? AppPalette.inkMutedDark : AppPalette.inkMuted);
-
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onTap();
-        },
-        child: AnimatedScale(
-          scale: selected ? 1.0 : 0.97,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              gradient: selected ? AppPalette.brandGradient : null,
-              color: selected ? null : surface,
-              borderRadius: BorderRadius.circular(12),
-              border:
-                  Border.all(color: selected ? Colors.transparent : border),
-              boxShadow: selected
-                  ? [
-                      BoxShadow(
-                        color: AppPalette.brand.withValues(alpha: 0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      )
-                    ]
-                  : null,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 14, color: textColor),
-                  const SizedBox(width: 5),
-                ],
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                    color: textColor,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -338,7 +261,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           .compareTo(buildingMap[b]?.name ?? b));
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 108),
+      padding: const EdgeInsets.fromLTRB(
+          16, 0, 16, AppSpacing.bottomScrollClearance),
       itemCount: groupKeys.length,
       itemBuilder: (context, index) {
         final buildingId = groupKeys[index];
@@ -676,7 +600,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildCategoryChip(
       BuildContext context, String? value, String label, String? selected) {
     final isSelected = value == selected;
-    return _pill(
+    return AppPill(
       label: label,
       selected: isSelected,
       onTap: () => ref.read(selectedCategoryProvider.notifier).state = value,
