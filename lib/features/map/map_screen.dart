@@ -12,6 +12,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../data/models/building.dart';
 import '../../data/models/bridge.dart';
 import '../../data/models/entry_point.dart';
+import '../../data/models/saved_route.dart';
 import '../../shared/providers/providers.dart';
 import 'services/course_tracker.dart';
 import 'widgets/map_bottom_sheet.dart';
@@ -121,10 +122,21 @@ class _MapScreenState extends ConsumerState<MapScreen>
       });
     });
 
+    // Celebrate arrival exactly once on the transition into the arrived state.
+    ref.listen(navigationSessionProvider.select((s) => s.status),
+        (prev, next) {
+      if (next == NavigationStatus.arrived &&
+          prev != NavigationStatus.arrived) {
+        HapticFeedback.heavyImpact();
+      }
+    });
+
     final buildingsAsync = ref.watch(buildingsProvider);
     final bridgesAsync = ref.watch(bridgesProvider);
     final selectedBuilding = ref.watch(selectedBuildingProvider);
     final activeRoute = ref.watch(activeRouteProvider);
+    final session = ref.watch(navigationSessionProvider);
+    final arrived = session.status == NavigationStatus.arrived;
     final bridgePaths = ref.watch(bridgePathsProvider).valueOrNull ?? {};
     final smoothedRoute = ref.watch(smoothedRouteProvider);
     final userLocation = ref.watch(locationStreamProvider);
@@ -222,7 +234,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
                       ),
                     if (activeRoute != null && activeRoute.length > 1)
                       MarkerLayer(
-                        markers: _buildRouteEndpoints(activeRoute, buildingMap),
+                        markers: _buildRouteEndpoints(
+                            activeRoute, buildingMap, arrived),
                       ),
                     if (displayUserLocation != null)
                       MarkerLayer(
@@ -250,6 +263,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
                   onStopNavigation: _stopNavigation,
                   onStartQuickRoute: _startQuickRoute,
                 ),
+                if (arrived)
+                  _buildArrivalCard(context, session, buildingMap, isDark),
               ],
             );
           },
@@ -564,7 +579,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
   }
 
   List<Marker> _buildRouteEndpoints(
-      List<String> route, Map<String, Building> bMap) {
+      List<String> route, Map<String, Building> bMap, bool arrived) {
     final markers = <Marker>[];
     final start = bMap[route.first];
     final end = bMap[route.last];
@@ -592,25 +607,39 @@ class _MapScreenState extends ConsumerState<MapScreen>
       ));
     }
     if (end != null) {
+      final endColor =
+          arrived ? AppPalette.origin : const Color(0xFFEF4444);
+      Widget endDot = Container(
+        decoration: BoxDecoration(
+          color: endColor,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 3),
+          boxShadow: [
+            BoxShadow(
+              color: endColor.withValues(alpha: 0.4),
+              blurRadius: 10,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: Icon(arrived ? Icons.check_rounded : Icons.flag_rounded,
+            size: 16, color: Colors.white),
+      );
+      if (arrived) {
+        // Signature arrival detail: a gentle spring-bounce on the destination.
+        endDot = endDot
+            .animate(onPlay: (c) => c.repeat(reverse: true))
+            .scaleXY(
+                begin: 1.0,
+                end: 1.18,
+                duration: 700.ms,
+                curve: Curves.easeInOut);
+      }
       markers.add(Marker(
         point: LatLng(end.lat, end.lng),
-        width: 34,
-        height: 34,
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFFEF4444),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 3),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFEF4444).withValues(alpha: 0.4),
-                blurRadius: 10,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: const Icon(Icons.flag_rounded, size: 14, color: Colors.white),
-        ),
+        width: 36,
+        height: 36,
+        child: endDot,
       ));
     }
     return markers;
@@ -1064,6 +1093,145 @@ class _MapScreenState extends ConsumerState<MapScreen>
     _guidanceEntryDistanceM = null;
     _offRouteStrikes = 0;
     if (mounted) setState(() {});
+  }
+
+  /// The arrival moment — a calm, celebratory card that slides up over the map
+  /// when navigation completes. Tasteful, no confetti (per the design spec).
+  Widget _buildArrivalCard(BuildContext context, NavigationSession session,
+      Map<String, Building> bMap, bool isDark) {
+    final theme = Theme.of(context);
+    final dest =
+        session.destinationId == null ? null : bMap[session.destinationId!];
+    final destName = dest?.name ?? 'your destination';
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: AppDims.navBarHeight + (bottomInset > 0 ? bottomInset : 14) + 24,
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: isDark ? AppPalette.cardDark : Colors.white,
+          borderRadius: AppRadii.rCard,
+          border: Border.all(color: AppPalette.origin.withValues(alpha: 0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.14),
+              blurRadius: 28,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppPalette.origin.withValues(alpha: 0.14),
+                  ),
+                  child: const Icon(Icons.check_circle_rounded,
+                      color: AppPalette.origin, size: 26),
+                )
+                    .animate()
+                    .scale(duration: 360.ms, curve: Curves.easeOutBack),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("You've arrived",
+                          style: theme.textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w800)),
+                      Text(destName,
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(color: theme.textTheme.bodySmall?.color),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _saveArrival(session),
+                    icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                    label: const Text('Save place'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppPalette.brand,
+                      side: BorderSide(
+                          color: AppPalette.brand.withValues(alpha: 0.4)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: AppRadii.rControl),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      _stopNavigation();
+                    },
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: AppRadii.rControl),
+                    ),
+                    child: const Text('Done'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      )
+          .animate()
+          .fadeIn(duration: AppMotion.normal)
+          .slideY(begin: 0.3, end: 0, curve: Curves.easeOutCubic),
+    );
+  }
+
+  void _saveArrival(NavigationSession session) {
+    final route = ref.read(activeRouteProvider);
+    if (route == null || route.length < 2) {
+      _stopNavigation();
+      return;
+    }
+    final buildings =
+        ref.read(buildingsProvider).valueOrNull ?? const <Building>[];
+    final bMap = {for (final b in buildings) b.id: b};
+    final fromName = bMap[route.first]?.name ?? route.first;
+    final toName = bMap[route.last]?.name ?? route.last;
+    final now = DateTime.now();
+    ref.read(savedRoutesProvider.notifier).add(
+          SavedRoute(
+            id: '${route.first}_${route.last}_${now.millisecondsSinceEpoch}',
+            name: '$fromName → $toName',
+            fromId: route.first,
+            toId: route.last,
+            routeType: session.mode,
+            createdAt: now,
+          ),
+        );
+    HapticFeedback.mediumImpact();
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Saved to your routes.')));
+    }
+    _stopNavigation();
   }
 
   Widget _buildMapControls(
