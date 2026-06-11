@@ -6,6 +6,7 @@ import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../data/models/building.dart';
 import '../../data/models/bridge.dart';
+import '../../data/models/opening_hours.dart';
 import '../../data/models/shop.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_pill.dart';
@@ -568,33 +569,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   bool _isOpenNow(String hours) {
-    final now = DateTime.now();
-    final weekday = now.weekday; // Mon=1
-    final nowMinutes = (now.hour * 60) + now.minute;
-
-    final segments = hours.split(',');
-    for (final segment in segments) {
-      final s = segment.trim();
-      final appliesWeekday =
-          (s.contains('Mon-Fri') && weekday >= 1 && weekday <= 5) ||
-              (s.contains('Sat-Sun') && weekday >= 6 && weekday <= 7) ||
-              (!s.contains('Mon-Fri') && !s.contains('Sat-Sun'));
-      if (!appliesWeekday) continue;
-
-      final match = RegExp(r'(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})')
-          .firstMatch(s);
-      if (match == null) continue;
-
-      final start = (int.parse(match.group(1)!) * 60) +
-          int.parse(match.group(2)!);
-      final end =
-          (int.parse(match.group(3)!) * 60) + int.parse(match.group(4)!);
-      if (nowMinutes >= start && nowMinutes <= end) {
-        return true;
-      }
-    }
-
-    return false;
+    return OpeningHours.parse(hours).statusAt(DateTime.now()).open;
   }
 
   Widget _buildCategoryChip(

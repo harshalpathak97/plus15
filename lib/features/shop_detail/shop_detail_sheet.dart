@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../data/models/building.dart';
+import '../../data/models/opening_hours.dart';
 import '../../data/models/shop.dart';
 import '../../shared/providers/providers.dart';
 
@@ -105,6 +106,12 @@ class ShopDetailSheet extends ConsumerWidget {
                   ),
                 ],
               ).animate().fadeIn(duration: 300.ms),
+              if (shop.hours.trim().isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _statusChip(context)
+                    .animate()
+                    .fadeIn(duration: 300.ms, delay: 60.ms),
+              ],
               const SizedBox(height: 20),
               _ctaRow(context, ref)
                   .animate()
@@ -147,6 +154,42 @@ class ShopDetailSheet extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _statusChip(BuildContext context) {
+    final status = OpeningHours.parse(shop.hours).statusAt(DateTime.now());
+    final color = !status.known
+        ? AppPalette.inkMuted
+        : status.open
+            ? AppPalette.origin
+            : AppPalette.destination;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.28)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              status.label,
+              style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: color),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
