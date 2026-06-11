@@ -14,6 +14,7 @@ import '../../../shared/widgets/app_pill.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/sheet_surface.dart';
 import '../../route_planner/widgets/step_list.dart';
+import '../../shop_detail/shop_detail_sheet.dart';
 import 'building_tooltip.dart';
 
 /// The single draggable sheet that anchors the bottom of the map.
@@ -349,6 +350,11 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
     final buildings =
         ref.watch(buildingsProvider).valueOrNull ?? const <Building>[];
     final buildingMap = {for (final b in buildings) b.id: b};
+    final shops = ref.watch(shopsProvider).valueOrNull ?? const <Shop>[];
+    // "Featured" = verified businesses (those with a website on file), capped
+    // at 5 and clearly tagged — never injected into search ranking.
+    final featured =
+        shops.where((s) => s.website.trim().isNotEmpty).take(5).toList();
 
     return [
       _searchPrompt(context),
@@ -356,6 +362,12 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
       const SectionHeader('Quick destinations'),
       const SizedBox(height: AppSpacing.md),
       _quickDestinations(context),
+      if (featured.isNotEmpty) ...[
+        const SizedBox(height: AppSpacing.xl),
+        const SectionHeader('Featured on the +15'),
+        const SizedBox(height: AppSpacing.md),
+        _featuredRow(context, featured, buildingMap),
+      ],
       const SizedBox(height: AppSpacing.xl),
       const SectionHeader('Browse by category'),
       const SizedBox(height: AppSpacing.md),
@@ -472,6 +484,96 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
     ref.read(searchQueryProvider.notifier).state = '';
     ref.read(selectedCategoryProvider.notifier).state = name;
     context.go('/search');
+  }
+
+  Widget _featuredRow(BuildContext context, List<Shop> featured,
+      Map<String, Building> buildingMap) {
+    return SizedBox(
+      height: 116,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.zero,
+        itemCount: featured.length,
+        itemBuilder: (_, i) {
+          final shop = featured[i];
+          final bName = buildingMap[shop.buildingId]?.name ?? 'Plus 15';
+          return _featuredCard(context, shop, bName);
+        },
+      ),
+    );
+  }
+
+  Widget _featuredCard(BuildContext context, Shop shop, String buildingName) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final color = AppPalette.categoryColor(shop.category.name);
+
+    return GestureDetector(
+      onTap: () => _showShopDetail(context, shop, buildingName),
+      child: Container(
+        width: 196,
+        margin: const EdgeInsets.only(right: AppSpacing.sm),
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: isDark ? AppPalette.cardDark : Colors.white,
+          borderRadius: AppRadii.rCard,
+          border: Border.all(
+              color: isDark ? AppPalette.borderDark : AppPalette.borderLight),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: AppRadii.rChip,
+                  ),
+                  child: Icon(_catIcon(shop.category), color: color, size: 18),
+                ),
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    gradient: AppPalette.brandGradient,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text('Featured',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3)),
+                ),
+              ],
+            ),
+            const Spacer(),
+            Text(shop.name,
+                style: theme.textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            Text(buildingName,
+                style: theme.textTheme.bodySmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showShopDetail(BuildContext context, Shop shop, String buildingName) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => ShopDetailSheet(shop: shop, buildingName: buildingName),
+    );
   }
 
   IconData _catIcon(ShopCategory cat) {
