@@ -147,6 +147,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
           data: (bridges) {
             final buildingMap = {for (final b in buildings) b.id: b};
             final visibleBuildings = _visibleBuildings(buildings);
+            final closuresCount = bridges
+                .where((b) => b.status != 'open' || !b.isAccessible)
+                .length;
+            final nearestName =
+                _nearestBuildingName(buildings, displayUserLocation);
 
             return Stack(
               children: [
@@ -231,7 +236,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
                   top: MediaQuery.of(context).padding.top + 12,
                   left: 16,
                   right: 16,
-                  child: _buildHeader(context, isDark),
+                  child: _buildHeader(
+                      context, isDark, closuresCount, nearestName),
                 ),
                 Positioned(
                   right: 16,
@@ -746,7 +752,27 @@ class _MapScreenState extends ConsumerState<MapScreen>
   }
 
 
-  Widget _buildHeader(BuildContext context, bool isDark) {
+  /// Nearest building name for the "You're near …" context line. Only resolves
+  /// when we have a fix inside the downtown bounds.
+  String? _nearestBuildingName(List<Building> buildings, LatLng? loc) {
+    if (loc == null || buildings.isEmpty) return null;
+    if (!_isInCalgaryBounds(loc.latitude, loc.longitude)) return null;
+    Building? best;
+    double bestM = double.infinity;
+    for (final b in buildings) {
+      final d = _distance(loc, LatLng(b.lat, b.lng));
+      if (d < bestM) {
+        bestM = d;
+        best = b;
+      }
+    }
+    // Only claim "near" if we're plausibly at/in a building.
+    if (best == null || bestM > 220) return null;
+    return best.name;
+  }
+
+  Widget _buildHeader(
+      BuildContext context, bool isDark, int closuresCount, String? nearest) {
     final theme = Theme.of(context);
     final surface =
         (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.82);
@@ -754,84 +780,110 @@ class _MapScreenState extends ConsumerState<MapScreen>
         ? Colors.white.withValues(alpha: 0.08)
         : Colors.black.withValues(alpha: 0.05);
 
-    return Row(
+    return Column(
       children: [
-        // Compact brand mark.
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            gradient: AppPalette.brandGradient,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: AppPalette.brand.withValues(alpha: 0.35),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
+        Row(
+          children: [
+            // Compact brand mark.
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                gradient: AppPalette.brandGradient,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppPalette.brand.withValues(alpha: 0.35),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: const Center(
-            child: Text('+15',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5)),
-          ),
+              child: const Center(
+                child: Text('+15',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5)),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // Live context line — the single biggest fix for "where am I?".
+            Expanded(child: _contextChip(context, isDark, nearest)),
+            const SizedBox(width: 10),
+            _circleButton(
+              context,
+              isDark,
+              icon: Icons.notifications_none_rounded,
+              badge: closuresCount,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                context.push('/alerts');
+              },
+            ),
+            const SizedBox(width: 8),
+            _circleButton(
+              context,
+              isDark,
+              icon: Icons.person_outline_rounded,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                context.go('/settings');
+              },
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
+        const SizedBox(height: 10),
         // Tappable search command bar — the primary way to find a place.
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: Material(
-                color: surface,
-                child: InkWell(
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    context.go('/search');
-                  },
-                  child: Container(
-                    height: 48,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: border),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black
-                              .withValues(alpha: isDark ? 0.32 : 0.08),
-                          blurRadius: 20,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.search_rounded,
-                            size: 20,
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Material(
+              color: surface,
+              child: InkWell(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  context.go('/search');
+                },
+                child: Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: border),
+                    boxShadow: [
+                      BoxShadow(
+                        color:
+                            Colors.black.withValues(alpha: isDark ? 0.32 : 0.08),
+                        blurRadius: 20,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.search_rounded,
+                          size: 20,
+                          color: isDark
+                              ? AppPalette.inkMutedDark
+                              : AppPalette.inkMuted),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Search the +15 network',
+                          style: theme.textTheme.bodyMedium?.copyWith(
                             color: isDark
                                 ? AppPalette.inkMutedDark
-                                : AppPalette.inkMuted),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Search the +15 network',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: isDark
-                                  ? AppPalette.inkMutedDark
-                                  : AppPalette.inkMuted,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                                : AppPalette.inkMuted,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        _zoomIndicator(),
-                      ],
-                    ),
+                      ),
+                      _zoomIndicator(),
+                    ],
                   ),
                 ),
               ),
@@ -841,6 +893,141 @@ class _MapScreenState extends ConsumerState<MapScreen>
       ],
     ).animate().fadeIn(duration: 400.ms).slideY(
         begin: -0.3, end: 0, duration: 400.ms, curve: Curves.easeOutCubic);
+  }
+
+  /// "You're near …" glass pill. Falls back to a network label without a fix.
+  Widget _contextChip(BuildContext context, bool isDark, String? nearest) {
+    final theme = Theme.of(context);
+    final surface =
+        (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.82);
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.05);
+    final muted = isDark ? AppPalette.inkMutedDark : AppPalette.inkMuted;
+    final located = nearest != null;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: located ? AppPalette.origin : AppPalette.warning,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      located ? "You're near" : 'Calgary +15',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                          color: muted,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.4),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      located ? nearest : 'Finding you…',
+                      style: theme.textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w700, height: 1.1),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _circleButton(
+    BuildContext context,
+    bool isDark, {
+    required IconData icon,
+    required VoidCallback onTap,
+    int badge = 0,
+  }) {
+    final surface =
+        (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.82);
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.05);
+    final iconColor = isDark ? AppPalette.inkDark : AppPalette.ink;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Material(
+          color: surface,
+          child: InkWell(
+            onTap: onTap,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: border),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(icon, size: 20, color: iconColor),
+                  if (badge > 0)
+                    Positioned(
+                      top: 8,
+                      right: 9,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        constraints:
+                            const BoxConstraints(minWidth: 16, minHeight: 16),
+                        decoration: BoxDecoration(
+                          color: AppPalette.danger,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: isDark
+                                  ? AppPalette.surfaceDark
+                                  : Colors.white,
+                              width: 1.5),
+                        ),
+                        child: Text(
+                          '$badge',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              height: 1),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _zoomIndicator() {

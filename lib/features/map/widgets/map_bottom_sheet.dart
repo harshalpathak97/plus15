@@ -10,6 +10,7 @@ import '../../../data/models/building.dart';
 import '../../../data/models/entry_point.dart';
 import '../../../data/models/shop.dart';
 import '../../../shared/providers/providers.dart';
+import '../../../shared/widgets/app_pill.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/sheet_surface.dart';
 import '../../route_planner/widgets/step_list.dart';
@@ -351,6 +352,14 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
 
     return [
       _searchPrompt(context),
+      const SizedBox(height: AppSpacing.xl),
+      const SectionHeader('Quick destinations'),
+      const SizedBox(height: AppSpacing.md),
+      _quickDestinations(context),
+      const SizedBox(height: AppSpacing.xl),
+      const SectionHeader('Browse by category'),
+      const SizedBox(height: AppSpacing.md),
+      _categoryGrid(context),
       if (routines.isNotEmpty) ...[
         const SizedBox(height: AppSpacing.xl),
         const SectionHeader('Quick routes'),
@@ -405,12 +414,85 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
       const SizedBox(height: AppSpacing.lg),
       Center(
         child: Text(
-          'Tap a building for details, or plan a route from the Route tab.',
+          'Tap a building for details, or plan a route from the Navigate tab.',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodySmall,
         ),
       ),
     ];
+  }
+
+  /// The downtown intents people actually have: a warm lunch, a washroom, the
+  /// CTrain, or shops. Each jumps into Search pre-filtered to that category.
+  Widget _quickDestinations(BuildContext context) {
+    return Wrap(
+      runSpacing: AppSpacing.sm,
+      children: [
+        AppPill(
+            label: 'Food',
+            selected: false,
+            icon: Icons.restaurant_rounded,
+            onTap: () => _goCategory('food')),
+        AppPill(
+            label: 'Washrooms',
+            selected: false,
+            icon: Icons.wc_rounded,
+            onTap: () => _goCategory('washroom')),
+        AppPill(
+            label: 'Transit',
+            selected: false,
+            icon: Icons.train_rounded,
+            onTap: () => _goCategory('transit')),
+        AppPill(
+            label: 'Shops',
+            selected: false,
+            icon: Icons.shopping_bag_rounded,
+            onTap: () => _goCategory('retail')),
+      ],
+    );
+  }
+
+  Widget _categoryGrid(BuildContext context) {
+    return Wrap(
+      runSpacing: AppSpacing.sm,
+      children: [
+        for (final c in ShopCategory.values)
+          AppPill(
+            label: c.label,
+            selected: false,
+            icon: _catIcon(c),
+            onTap: () => _goCategory(c.name),
+          ),
+      ],
+    );
+  }
+
+  void _goCategory(String name) {
+    HapticFeedback.selectionClick();
+    ref.read(searchQueryProvider.notifier).state = '';
+    ref.read(selectedCategoryProvider.notifier).state = name;
+    context.go('/search');
+  }
+
+  IconData _catIcon(ShopCategory cat) {
+    switch (cat) {
+      case ShopCategory.food:
+        return Icons.restaurant_rounded;
+      case ShopCategory.retail:
+        return Icons.shopping_bag_rounded;
+      case ShopCategory.services:
+        return Icons.business_center_rounded;
+      case ShopCategory.transit:
+        return Icons.train_rounded;
+      case ShopCategory.washroom:
+        return Icons.wc_rounded;
+      case ShopCategory.hotel:
+        return Icons.hotel_rounded;
+      case ShopCategory.health:
+        return Icons.local_hospital_rounded;
+      case ShopCategory.entertainment:
+        return Icons.theaters_rounded;
+    }
   }
 
   Widget _searchPrompt(BuildContext context) {
