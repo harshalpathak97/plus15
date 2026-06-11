@@ -9,13 +9,40 @@ import '../../features/search/search_screen.dart';
 import '../../features/route_planner/route_screen.dart';
 import '../../features/saved_routes/saved_routes_screen.dart';
 import '../../features/settings/settings_screen.dart';
+import '../../features/alerts/alerts_screen.dart';
+import '../../features/help/help_screen.dart';
+import '../../features/onboarding/onboarding_screen.dart';
+import '../../data/datasources/local_storage.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
+
+/// Branch indices inside the [StatefulShellRoute]. Explore (the map) is the
+/// substrate; Search and Settings are reachable surfaces that don't occupy a
+/// bottom-bar slot.
+class _Branch {
+  static const explore = 0;
+  static const search = 1;
+  static const navigate = 2;
+  static const saved = 3;
+  // Branch 4 (Settings) is reached from the Explore profile button, not a tab.
+}
 
 final appRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
   initialLocation: '/map',
+  redirect: (context, state) {
+    final complete = LocalStorage().getOnboardingComplete();
+    final atOnboarding = state.matchedLocation == '/onboarding';
+    if (!complete && !atOnboarding) return '/onboarding';
+    if (complete && atOnboarding) return '/map';
+    return null;
+  },
   routes: [
+    GoRoute(
+      path: '/onboarding',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (_, __) => const OnboardingScreen(),
+    ),
     StatefulShellRoute.indexedStack(
       builder: (context, state, shell) => ScaffoldWithNav(shell: shell),
       branches: [
@@ -38,22 +65,51 @@ final appRouter = GoRouter(
         ]),
       ],
     ),
+    // Conditional chrome — pushed over the shell with their own back affordance.
+    GoRoute(
+      path: '/alerts',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (_, __) => const AlertsScreen(),
+    ),
+    GoRoute(
+      path: '/help',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (_, __) => const HelpScreen(),
+    ),
   ],
 );
 
+/// A bottom-bar tab mapped to a shell branch.
 class _NavItem {
+  final int branch;
   final IconData icon;
   final IconData activeIcon;
   final String label;
-  const _NavItem(this.icon, this.activeIcon, this.label);
+
+  /// Branch indices that should light this tab as selected (a tab can "own"
+  /// deeper surfaces — Explore owns Search).
+  final Set<int> ownedBranches;
+
+  const _NavItem(
+    this.branch,
+    this.icon,
+    this.activeIcon,
+    this.label, {
+    this.ownedBranches = const {},
+  });
+
+  bool isSelected(int current) =>
+      current == branch || ownedBranches.contains(current);
 }
 
 const _navItems = [
-  _NavItem(Icons.map_outlined, Icons.map_rounded, 'Map'),
-  _NavItem(Icons.search_rounded, Icons.search_rounded, 'Search'),
-  _NavItem(Icons.alt_route_rounded, Icons.alt_route_rounded, 'Route'),
-  _NavItem(Icons.bookmark_border_rounded, Icons.bookmark_rounded, 'Saved'),
-  _NavItem(Icons.tune_rounded, Icons.tune_rounded, 'Settings'),
+  _NavItem(_Branch.explore, Icons.explore_outlined, Icons.explore_rounded,
+      'Explore',
+      ownedBranches: {_Branch.search}),
+  _NavItem(_Branch.navigate, Icons.alt_route_rounded, Icons.navigation_rounded,
+      'Navigate'),
+  _NavItem(_Branch.saved, Icons.bookmark_border_rounded, Icons.bookmark_rounded,
+      'Saved'),
 ];
 
 class ScaffoldWithNav extends StatelessWidget {
@@ -67,10 +123,10 @@ class ScaffoldWithNav extends StatelessWidget {
       extendBody: true,
       body: shell,
       bottomNavigationBar: _GlassNavBar(
-        currentIndex: shell.currentIndex,
-        onSelect: (i) {
+        currentBranch: shell.currentIndex,
+        onSelect: (branch) {
           HapticFeedback.lightImpact();
-          shell.goBranch(i, initialLocation: i == shell.currentIndex);
+          shell.goBranch(branch, initialLocation: branch == shell.currentIndex);
         },
       ),
     );
@@ -78,10 +134,10 @@ class ScaffoldWithNav extends StatelessWidget {
 }
 
 class _GlassNavBar extends StatelessWidget {
-  final int currentIndex;
+  final int currentBranch;
   final ValueChanged<int> onSelect;
 
-  const _GlassNavBar({required this.currentIndex, required this.onSelect});
+  const _GlassNavBar({required this.currentBranch, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
@@ -95,7 +151,8 @@ class _GlassNavBar extends StatelessWidget {
         : Colors.black.withValues(alpha: 0.05);
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 0, 16, bottomInset > 0 ? bottomInset : 14),
+      padding:
+          EdgeInsets.fromLTRB(16, 0, 16, bottomInset > 0 ? bottomInset : 14),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(26),
         child: BackdropFilter(
@@ -118,12 +175,12 @@ class _GlassNavBar extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                for (var i = 0; i < _navItems.length; i++)
+                for (final item in _navItems)
                   _NavCell(
-                    item: _navItems[i],
-                    selected: i == currentIndex,
+                    item: item,
+                    selected: item.isSelected(currentBranch),
                     isDark: isDark,
-                    onTap: () => onSelect(i),
+                    onTap: () => onSelect(item.branch),
                   ),
               ],
             ),
@@ -160,7 +217,7 @@ class _NavCell extends StatelessWidget {
           duration: const Duration(milliseconds: 260),
           curve: Curves.easeOutCubic,
           height: 48,
-          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 9),
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
           decoration: BoxDecoration(
             gradient: selected ? AppPalette.brandGradient : null,
             borderRadius: BorderRadius.circular(16),
@@ -187,7 +244,7 @@ class _NavCell extends StatelessWidget {
                 curve: Curves.easeOutCubic,
                 child: selected
                     ? Padding(
-                        padding: const EdgeInsets.only(left: 7, right: 2),
+                        padding: const EdgeInsets.only(left: 8, right: 2),
                         child: Text(
                           item.label,
                           style: const TextStyle(

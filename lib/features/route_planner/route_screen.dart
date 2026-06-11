@@ -44,7 +44,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                 16, 16, 16, AppSpacing.bottomScrollClearance),
             children: [
               const ScreenHeader(
-                  'Route Planner', 'Find the best path through Plus 15'),
+                  'Navigate', 'Find the best path through the +15 network'),
               const SizedBox(height: 20),
               _buildLocationSelector(context, buildings, true, from,
                       allowUseMyLocation: true)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../shared/providers/providers.dart';
@@ -42,6 +43,12 @@ class SettingsScreen extends ConsumerWidget {
             _buildWalkingSpeedSlider(context, ref, walkingSpeed)
                 .animate()
                 .fadeIn(duration: 400.ms, delay: 250.ms),
+            const SizedBox(height: 24),
+            const SectionHeader('Support'),
+            const SizedBox(height: 10),
+            _buildLinkCard(context)
+                .animate()
+                .fadeIn(duration: 400.ms, delay: 280.ms),
             const SizedBox(height: 24),
             const SectionHeader('About'),
             const SizedBox(height: 10),
@@ -228,6 +235,62 @@ class SettingsScreen extends ConsumerWidget {
               ref.read(walkingSpeedProvider.notifier).setSpeed(v);
             },
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLinkCard(BuildContext context) {
+    final theme = Theme.of(context);
+    Widget row(IconData icon, Color color, String title, String subtitle,
+        String route) {
+      return InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          context.push(route);
+        },
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    Text(subtitle, style: theme.textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded,
+                  color: theme.textTheme.bodySmall?.color),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return GlassCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          row(Icons.notifications_none_rounded, AppPalette.warning,
+              'Network status', 'Closures and limited segments', '/alerts'),
+          Divider(height: 1, color: theme.dividerColor),
+          row(Icons.help_outline_rounded, AppPalette.brand, 'Help & feedback',
+              'How to read the map, report a closure', '/help'),
         ],
       ),
     );

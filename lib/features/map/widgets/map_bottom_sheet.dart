@@ -10,9 +10,11 @@ import '../../../data/models/building.dart';
 import '../../../data/models/entry_point.dart';
 import '../../../data/models/shop.dart';
 import '../../../shared/providers/providers.dart';
+import '../../../shared/widgets/app_pill.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/sheet_surface.dart';
 import '../../route_planner/widgets/step_list.dart';
+import '../../shop_detail/shop_detail_sheet.dart';
 import 'building_tooltip.dart';
 
 /// The single draggable sheet that anchors the bottom of the map.
@@ -348,9 +350,28 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
     final buildings =
         ref.watch(buildingsProvider).valueOrNull ?? const <Building>[];
     final buildingMap = {for (final b in buildings) b.id: b};
+    final shops = ref.watch(shopsProvider).valueOrNull ?? const <Shop>[];
+    // "Featured" = verified businesses (those with a website on file), capped
+    // at 5 and clearly tagged — never injected into search ranking.
+    final featured =
+        shops.where((s) => s.website.trim().isNotEmpty).take(5).toList();
 
     return [
       _searchPrompt(context),
+      const SizedBox(height: AppSpacing.xl),
+      const SectionHeader('Quick destinations'),
+      const SizedBox(height: AppSpacing.md),
+      _quickDestinations(context),
+      if (featured.isNotEmpty) ...[
+        const SizedBox(height: AppSpacing.xl),
+        const SectionHeader('Featured on the +15'),
+        const SizedBox(height: AppSpacing.md),
+        _featuredRow(context, featured, buildingMap),
+      ],
+      const SizedBox(height: AppSpacing.xl),
+      const SectionHeader('Browse by category'),
+      const SizedBox(height: AppSpacing.md),
+      _categoryGrid(context),
       if (routines.isNotEmpty) ...[
         const SizedBox(height: AppSpacing.xl),
         const SectionHeader('Quick routes'),
@@ -405,12 +426,175 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
       const SizedBox(height: AppSpacing.lg),
       Center(
         child: Text(
-          'Tap a building for details, or plan a route from the Route tab.',
+          'Tap a building for details, or plan a route from the Navigate tab.',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodySmall,
         ),
       ),
     ];
+  }
+
+  /// The downtown intents people actually have: a warm lunch, a washroom, the
+  /// CTrain, or shops. Each jumps into Search pre-filtered to that category.
+  Widget _quickDestinations(BuildContext context) {
+    return Wrap(
+      runSpacing: AppSpacing.sm,
+      children: [
+        AppPill(
+            label: 'Food',
+            selected: false,
+            icon: Icons.restaurant_rounded,
+            onTap: () => _goCategory('food')),
+        AppPill(
+            label: 'Washrooms',
+            selected: false,
+            icon: Icons.wc_rounded,
+            onTap: () => _goCategory('washroom')),
+        AppPill(
+            label: 'Transit',
+            selected: false,
+            icon: Icons.train_rounded,
+            onTap: () => _goCategory('transit')),
+        AppPill(
+            label: 'Shops',
+            selected: false,
+            icon: Icons.shopping_bag_rounded,
+            onTap: () => _goCategory('retail')),
+      ],
+    );
+  }
+
+  Widget _categoryGrid(BuildContext context) {
+    return Wrap(
+      runSpacing: AppSpacing.sm,
+      children: [
+        for (final c in ShopCategory.values)
+          AppPill(
+            label: c.label,
+            selected: false,
+            icon: _catIcon(c),
+            onTap: () => _goCategory(c.name),
+          ),
+      ],
+    );
+  }
+
+  void _goCategory(String name) {
+    HapticFeedback.selectionClick();
+    ref.read(searchQueryProvider.notifier).state = '';
+    ref.read(selectedCategoryProvider.notifier).state = name;
+    context.go('/search');
+  }
+
+  Widget _featuredRow(BuildContext context, List<Shop> featured,
+      Map<String, Building> buildingMap) {
+    return SizedBox(
+      height: 116,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.zero,
+        itemCount: featured.length,
+        itemBuilder: (_, i) {
+          final shop = featured[i];
+          final bName = buildingMap[shop.buildingId]?.name ?? 'Plus 15';
+          return _featuredCard(context, shop, bName);
+        },
+      ),
+    );
+  }
+
+  Widget _featuredCard(BuildContext context, Shop shop, String buildingName) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final color = AppPalette.categoryColor(shop.category.name);
+
+    return GestureDetector(
+      onTap: () => _showShopDetail(context, shop, buildingName),
+      child: Container(
+        width: 196,
+        margin: const EdgeInsets.only(right: AppSpacing.sm),
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: isDark ? AppPalette.cardDark : Colors.white,
+          borderRadius: AppRadii.rCard,
+          border: Border.all(
+              color: isDark ? AppPalette.borderDark : AppPalette.borderLight),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: AppRadii.rChip,
+                  ),
+                  child: Icon(_catIcon(shop.category), color: color, size: 18),
+                ),
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    gradient: AppPalette.brandGradient,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text('Featured',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3)),
+                ),
+              ],
+            ),
+            const Spacer(),
+            Text(shop.name,
+                style: theme.textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            Text(buildingName,
+                style: theme.textTheme.bodySmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showShopDetail(BuildContext context, Shop shop, String buildingName) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => ShopDetailSheet(shop: shop, buildingName: buildingName),
+    );
+  }
+
+  IconData _catIcon(ShopCategory cat) {
+    switch (cat) {
+      case ShopCategory.food:
+        return Icons.restaurant_rounded;
+      case ShopCategory.retail:
+        return Icons.shopping_bag_rounded;
+      case ShopCategory.services:
+        return Icons.business_center_rounded;
+      case ShopCategory.transit:
+        return Icons.train_rounded;
+      case ShopCategory.washroom:
+        return Icons.wc_rounded;
+      case ShopCategory.hotel:
+        return Icons.hotel_rounded;
+      case ShopCategory.health:
+        return Icons.local_hospital_rounded;
+      case ShopCategory.entertainment:
+        return Icons.theaters_rounded;
+    }
   }
 
   Widget _searchPrompt(BuildContext context) {

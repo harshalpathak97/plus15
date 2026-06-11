@@ -60,6 +60,7 @@ class Shop {
   final ShopCategory category;
   final String hours;
   final String phone;
+  final String website;
   final String description;
 
   const Shop({
@@ -69,6 +70,7 @@ class Shop {
     required this.category,
     this.hours = '',
     this.phone = '',
+    this.website = '',
     this.description = '',
   });
 
@@ -82,6 +84,7 @@ class Shop {
         ),
         hours: json['hours'] as String? ?? '',
         phone: json['phone'] as String? ?? '',
+        website: json['website'] as String? ?? '',
         description: json['description'] as String? ?? '',
       );
 
@@ -92,6 +95,7 @@ class Shop {
         'category': category.name,
         'hours': hours,
         'phone': phone,
+        'website': website,
         'description': description,
       };
 }

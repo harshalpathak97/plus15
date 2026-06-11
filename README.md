@@ -19,6 +19,16 @@ buildings without ever stepping outside.
 - **Search & explore** every shop, washroom, transit link, and amenity in the
   network, grouped by building.
 - **Saved & routine routes** for one-tap launching of your daily commute.
+- **Three-tab IA** — **Explore** (the live map is the substrate, with a search
+  command bar, a "You're near …" context line, quick destinations and category
+  browsing in the bottom sheet), **Navigate** (route planning + turn-by-turn),
+  and **Saved**. A profile button and a badged alerts bell live in the Explore
+  header.
+- **Network status (alerts).** Closed and limited-access skywalk segments are
+  derived live from the bridge graph, with a delightful "All clear" state when
+  the whole +15 is open. Reachable from the Explore alert bell or Settings.
+- **Help & feedback** with a map legend ("how to read the map"), confidence
+  tips for imperfect downtown GPS, and report-a-closure / send-feedback.
 
 ## Architecture
 
