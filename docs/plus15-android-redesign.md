@@ -1,6 +1,6 @@
-# Bless 15 — Android Redesign & Product Spec
+# Plus 15 — Android Redesign & Product Spec
 
-**Project codename:** Bless 15 (Calgary +15 Navigator)
+**Project codename:** Plus 15 (Calgary +15 Navigator)
 **Document type:** Full product / design / engineering handoff
 **Platform:** Android phones first (Flutter, native-compiled)
 **Status:** Implementation-ready spec
@@ -22,7 +22,7 @@ Where I make assumptions, they are flagged **[ASSUMPTION]** with a recommendatio
 
 ## 1. Product vision
 
-**Bless 15 is the calm, confident way to move through the largest elevated indoor walkway network on earth — Calgary's +15 — without ever guessing where you are.**
+**Plus 15 is the calm, confident way to move through the largest elevated indoor walkway network on earth — Calgary's +15 — without ever guessing where you are.**
 
 Downtown Calgary's +15 is ~16–18 km of skywalk spanning 100+ buildings four storeys up. It is a genuine wayfinding problem: bridges look identical, building names rotate with ownership, GPS is unreliable above-grade and indoors, and signage is inconsistent. People who work downtown have learned a private mental map; everyone else — visitors, new hires, conference-goers, anyone fleeing –30 °C — is lost.
 
@@ -33,7 +33,7 @@ Downtown Calgary's +15 is ~16–18 km of skywalk spanning 100+ buildings four st
 
 **Emotional outcome:** the relief of *"I know exactly where I am and exactly where to turn,"* even when the blue dot is jittering. We sell **certainty indoors**, the one thing every generic map app fails to deliver above-grade.
 
-**Why it deserves to exist:** Google/Apple Maps treat the +15 as a black box — they route you outside, at street level, in the cold. The official iOS app is functional but flat, and its reviews flag exactly the right problems: weak labels, missing landmarks, imperfect geolocation. No one has built the *premium, +15-native* companion. Bless 15 is that app: it doesn't pretend to be a city map; it is a purpose-built instrument for one extraordinary network.
+**Why it deserves to exist:** Google/Apple Maps treat the +15 as a black box — they route you outside, at street level, in the cold. The official iOS app is functional but flat, and its reviews flag exactly the right problems: weak labels, missing landmarks, imperfect geolocation. No one has built the *premium, +15-native* companion. Plus 15 is that app: it doesn't pretend to be a city map; it is a purpose-built instrument for one extraordinary network.
 
 ---
 
@@ -122,7 +122,7 @@ App
 ├─ Splash (brand + graph draw-in, ~800ms or until data ready)
 ├─ Onboarding (first run only)
 │   ├─ 1. What is the +15 (value)
-│   ├─ 2. How Bless 15 guides you (confidence promise)
+│   ├─ 2. How Plus 15 guides you (confidence promise)
 │   └─ 3. Location permission education → system prompt
 ├─ Main shell (persistent map + bottom bar)
 │   ├─ Explore  (default)
@@ -365,7 +365,7 @@ Cache the **entire network graph + business directory in Hive** on first load (i
 Single source: `AppPalette` + `AppTheme` (already). Add `MotionTokens`, `Elevation`, `Radii`, `Spacing` token classes. Theme mode from a `settingsProvider` (system/light/dark). Optional Material You dynamic color as an opt-in accent (kept off by default to protect brand).
 
 ### Deep linking
-`bless15://business/{id}`, `bless15://navigate?to={id}&from={id|me}`, `bless15://alerts`, plus `https://bless15.com/...` App Links. Enables sponsored "Navigate here" links and notifications.
+`plus15://business/{id}`, `plus15://navigate?to={id}&from={id|me}`, `plus15://alerts`, plus `https://plus15.com/...` App Links. Enables sponsored "Navigate here" links and notifications.
 
 ### Analytics events
 `onboarding_complete`, `permission_granted/denied/approximate`, `search_performed{query,results}`, `business_viewed{id,category}`, `cta_navigate/call/website{id}`, `route_planned{mode,bridges,distance}`, `nav_started/arrived/aborted`, `reroute{reason}`, `closure_encountered`, `favorite_added`, `routine_launched`. Privacy-first, no PII, opt-out in Settings.
@@ -503,7 +503,7 @@ Entities and key fields (✚ = new/extended vs current repo):
 
 ## 15. Figma-ready design brief
 
-**Goal:** Transform Bless 15 into the unmistakably best digital interface for Calgary's +15 — premium, calm, confidence-inspiring, dark-mode-hero.
+**Goal:** Transform Plus 15 into the unmistakably best digital interface for Calgary's +15 — premium, calm, confidence-inspiring, dark-mode-hero.
 
 **Deliver in Figma:**
 - **Foundations page:** color tokens (table in §2), type scale (Plus Jakarta Sans + Inter, with tabular-figures style), radii (28/20/14/12), elevation (glass blur + single soft shadow), spacing (4-pt grid), motion tokens (120/240/600–900ms, spring specs), iconography (Material Symbols Rounded, tinted chips).
@@ -561,7 +561,7 @@ Entities and key fields (✚ = new/extended vs current repo):
 # Final deliverables
 
 ### 1. Creative direction statement
-Bless 15 is a luminous, glass-over-ink wayfinding instrument built for one extraordinary place — Calgary's +15 — where calm typography, a single glowing teal network, and motion that *explains the geography* turn the most disorienting indoor maze in Canada into a quietly confident walk; it never pretends GPS is perfect above-grade, so it earns trust by being honest, snapping you to named bridges and buildings, and guiding by the landmarks you can actually see, until the app feels less like a map and more like a local who always knows exactly where you are.
+Plus 15 is a luminous, glass-over-ink wayfinding instrument built for one extraordinary place — Calgary's +15 — where calm typography, a single glowing teal network, and motion that *explains the geography* turn the most disorienting indoor maze in Canada into a quietly confident walk; it never pretends GPS is perfect above-grade, so it earns trust by being honest, snapping you to named bridges and buildings, and guiding by the landmarks you can actually see, until the app feels less like a map and more like a local who always knows exactly where you are.
 
 ### 2. Feature priority table
 
@@ -589,4 +589,4 @@ Bless 15 is a luminous, glass-over-ink wayfinding instrument built for one extra
 | Partner analytics dashboard | | | ✅ |
 
 ### 3. App store positioning line
-**"Bless 15 — the calm, confident way to find anything on Calgary's +15, even four storeys up."**
+**"Plus 15 — the calm, confident way to find anything on Calgary's +15, even four storeys up."**
