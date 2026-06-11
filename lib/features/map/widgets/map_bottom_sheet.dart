@@ -169,7 +169,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
         Container(
           padding: const EdgeInsets.all(AppSpacing.sm),
           decoration: BoxDecoration(
-            gradient: AppPalette.brandGradient,
+            color: AppPalette.brand,
             borderRadius: AppRadii.rChip,
           ),
           child: const Icon(Icons.navigation_rounded,
@@ -539,7 +539,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
-                    gradient: AppPalette.brandGradient,
+                    color: AppPalette.brand,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: const Text('Featured',
@@ -617,7 +617,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
               Container(
                 padding: const EdgeInsets.all(AppSpacing.sm),
                 decoration: BoxDecoration(
-                  gradient: AppPalette.brandGradient,
+                  color: AppPalette.brand,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.search_rounded,

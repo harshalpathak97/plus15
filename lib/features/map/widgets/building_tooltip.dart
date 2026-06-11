@@ -76,14 +76,7 @@ class BuildingTooltip extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      _typeColor(building.type),
-                      _typeColor(building.type).withValues(alpha: 0.7),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  color: _typeColor(building.type),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(_typeIcon(building.type),

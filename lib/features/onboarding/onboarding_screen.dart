@@ -167,9 +167,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [color.withValues(alpha: 0.28), color.withValues(alpha: 0)],
-        ),
+        color: color.withValues(alpha: 0.10),
       ),
     );
   }
@@ -185,8 +183,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             width: i == _page ? 26 : 8,
             height: 8,
             decoration: BoxDecoration(
-              gradient: i == _page ? AppPalette.brandGradient : null,
-              color: i == _page ? null : Colors.white24,
+              color: i == _page ? AppPalette.brand : Colors.white24,
               borderRadius: BorderRadius.circular(4),
             ),
           ),
@@ -200,7 +197,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       height: 54,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: AppPalette.brandGradient,
+          color: AppPalette.brand,
           borderRadius: AppRadii.rControl,
           boxShadow: [
             BoxShadow(
@@ -254,12 +251,7 @@ class _OnboardPage extends StatelessWidget {
             width: 96,
             height: 96,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppPalette.brand.withValues(alpha: 0.9),
-                  AppPalette.skywalk.withValues(alpha: 0.9),
-                ],
-              ),
+              color: AppPalette.brand,
               borderRadius: BorderRadius.circular(28),
               boxShadow: [
                 BoxShadow(
@@ -301,7 +293,7 @@ class _OnboardPage extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'You can change this anytime in Settings.',
+                    'You can change this anytime in your device settings.',
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.5),
                         fontSize: 13),

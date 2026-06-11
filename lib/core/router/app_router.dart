@@ -8,7 +8,8 @@ import '../../features/map/map_screen.dart';
 import '../../features/search/search_screen.dart';
 import '../../features/route_planner/route_screen.dart';
 import '../../features/saved_routes/saved_routes_screen.dart';
-import '../../features/settings/settings_screen.dart';
+import '../../features/directory/directory_screen.dart';
+import '../../features/map3d/map3d_screen.dart';
 import '../../features/alerts/alerts_screen.dart';
 import '../../features/help/help_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
@@ -17,14 +18,14 @@ import '../../data/datasources/local_storage.dart';
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 /// Branch indices inside the [StatefulShellRoute]. Explore (the map) is the
-/// substrate; Search and Settings are reachable surfaces that don't occupy a
+/// substrate; Search is a reachable surface that doesn't occupy a
 /// bottom-bar slot.
 class _Branch {
   static const explore = 0;
   static const search = 1;
-  static const navigate = 2;
-  static const saved = 3;
-  // Branch 4 (Settings) is reached from the Explore profile button, not a tab.
+  static const directory = 2;
+  static const navigate = 3;
+  static const saved = 4;
 }
 
 final appRouter = GoRouter(
@@ -53,15 +54,15 @@ final appRouter = GoRouter(
           GoRoute(path: '/search', builder: (_, __) => const SearchScreen()),
         ]),
         StatefulShellBranch(routes: [
+          GoRoute(
+              path: '/directory', builder: (_, __) => const DirectoryScreen()),
+        ]),
+        StatefulShellBranch(routes: [
           GoRoute(path: '/route', builder: (_, __) => const RouteScreen()),
         ]),
         StatefulShellBranch(routes: [
           GoRoute(
               path: '/saved', builder: (_, __) => const SavedRoutesScreen()),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-              path: '/settings', builder: (_, __) => const SettingsScreen()),
         ]),
       ],
     ),
@@ -75,6 +76,19 @@ final appRouter = GoRouter(
       path: '/help',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (_, __) => const HelpScreen(),
+    ),
+    GoRoute(
+      path: '/map3d',
+      parentNavigatorKey: _rootNavigatorKey,
+      pageBuilder: (_, state) => CustomTransitionPage(
+        key: state.pageKey,
+        transitionDuration: const Duration(milliseconds: 320),
+        transitionsBuilder: (_, animation, __, child) => FadeTransition(
+          opacity: CurveTween(curve: Curves.easeOut).animate(animation),
+          child: child,
+        ),
+        child: const Map3DScreen(),
+      ),
     ),
   ],
 );
@@ -106,6 +120,8 @@ const _navItems = [
   _NavItem(_Branch.explore, Icons.explore_outlined, Icons.explore_rounded,
       'Explore',
       ownedBranches: {_Branch.search}),
+  _NavItem(_Branch.directory, Icons.storefront_outlined,
+      Icons.storefront_rounded, 'Directory'),
   _NavItem(_Branch.navigate, Icons.alt_route_rounded, Icons.navigation_rounded,
       'Navigate'),
   _NavItem(_Branch.saved, Icons.bookmark_border_rounded, Icons.bookmark_rounded,
@@ -208,6 +224,7 @@ class _NavCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final inactiveColor =
         isDark ? AppPalette.inkMutedDark : AppPalette.inkMuted;
+    final activeColor = isDark ? AppPalette.brandSoft : AppPalette.brand;
 
     return Expanded(
       child: GestureDetector(
@@ -219,17 +236,10 @@ class _NavCell extends StatelessWidget {
           height: 48,
           margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
           decoration: BoxDecoration(
-            gradient: selected ? AppPalette.brandGradient : null,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: AppPalette.brand.withValues(alpha: 0.35),
-                      blurRadius: 16,
-                      offset: const Offset(0, 5),
-                    ),
-                  ]
+            color: selected
+                ? activeColor.withValues(alpha: isDark ? 0.16 : 0.10)
                 : null,
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -237,19 +247,19 @@ class _NavCell extends StatelessWidget {
               Icon(
                 selected ? item.activeIcon : item.icon,
                 size: 22,
-                color: selected ? Colors.white : inactiveColor,
+                color: selected ? activeColor : inactiveColor,
               ),
               AnimatedSize(
                 duration: const Duration(milliseconds: 260),
                 curve: Curves.easeOutCubic,
                 child: selected
                     ? Padding(
-                        padding: const EdgeInsets.only(left: 8, right: 2),
+                        padding: const EdgeInsets.only(left: 7, right: 2),
                         child: Text(
                           item.label,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
+                          style: TextStyle(
+                            color: activeColor,
+                            fontSize: 12.5,
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.2,
                           ),

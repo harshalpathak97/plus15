@@ -63,7 +63,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      gradient: AppPalette.brandGradient,
+                      color: AppPalette.brand,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
@@ -376,7 +376,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                   ref.read(routeToProvider.notifier).state = b;
                                 }
                                 Navigator.pop(context);
-                                setState(() => _results = null);
+                                if (mounted) setState(() => _results = null);
                               },
                             );
                           },

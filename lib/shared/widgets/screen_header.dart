@@ -4,8 +4,8 @@ import '../../core/theme/app_spacing.dart';
 
 /// The large title + subtitle block that heads each of the secondary tabs.
 ///
-/// Centralizes what was copy-pasted into Search, Route, Saved and Settings so
-/// the four screens share one rhythm and entrance animation.
+/// Centralizes what was copy-pasted into Search, Route, Saved and Directory so
+/// the screens share one rhythm and entrance animation.
 class ScreenHeader extends StatelessWidget {
   final String title;
   final String subtitle;

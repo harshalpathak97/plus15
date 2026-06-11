@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 
-/// A selectable pill: brand-gradient fill when selected, a bordered surface
+/// A selectable pill: brand fill when selected, a bordered surface
 /// otherwise, with a subtle scale. Shared by Search filters/category chips and
 /// any other chip-style toggles so they stay visually identical.
 class AppPill extends StatelessWidget {
@@ -46,8 +46,7 @@ class AppPill extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              gradient: selected ? AppPalette.brandGradient : null,
-              color: selected ? null : surface,
+              color: selected ? AppPalette.brand : surface,
               borderRadius: AppRadii.rChip,
               border: Border.all(color: selected ? Colors.transparent : border),
               boxShadow: selected

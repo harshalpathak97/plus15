@@ -226,7 +226,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             Container(
               padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
-                gradient: AppPalette.brandGradient,
+                color: AppPalette.brand,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
@@ -303,7 +303,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     return GlassCard(
       padding: EdgeInsets.zero,
-      accent: AppPalette.brandGradient,
+      accent: AppPalette.brand,
       child: Column(
         children: [
           Padding(
@@ -314,7 +314,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    gradient: AppPalette.brandGradient,
+                    color: AppPalette.brand,
                     borderRadius: BorderRadius.circular(11),
                   ),
                   child: const Icon(Icons.location_city_rounded,
@@ -527,8 +527,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: accent ? AppPalette.brandGradient : null,
-        color: accent ? null : neutralBg,
+        color: accent ? AppPalette.brand : neutralBg,
         borderRadius: BorderRadius.circular(12),
         boxShadow: accent
             ? [

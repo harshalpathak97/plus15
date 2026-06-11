@@ -111,11 +111,4 @@ class AppPalette {
         return brand;
     }
   }
-
-  /// The signature brand gradient used on primary surfaces and the route bar.
-  static const LinearGradient brandGradient = LinearGradient(
-    colors: [brand, skywalk],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
 }

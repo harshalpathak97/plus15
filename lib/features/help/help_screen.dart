@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../shared/widgets/glass_card.dart';
@@ -62,10 +63,10 @@ class HelpScreen extends StatelessWidget {
                     'GPS is approximate above-grade. Indoors and four storeys up, your dot may drift — follow the highlighted bridge and the building names rather than the exact dot.'),
                 const SizedBox(height: AppSpacing.md),
                 _tip(theme, Icons.alt_route_rounded,
-                    'If a bridge ahead closes, we reroute automatically and tell you the added distance — you’ll never be sent to a locked door.'),
+                    'If a bridge ahead closes, we reroute automatically and tell you the added distance — you\'ll never be sent to a locked door.'),
                 const SizedBox(height: AppSpacing.md),
                 _tip(theme, Icons.accessible_rounded,
-                    'Turn on Accessible routing in Settings to avoid stairs and route elevator-to-elevator.'),
+                    'Choose the Accessible route option in the Navigate tab to avoid stairs and route elevator-to-elevator.'),
               ],
             ),
           ),
@@ -78,14 +79,21 @@ class HelpScreen extends StatelessWidget {
               children: [
                 _actionRow(context, Icons.report_outlined, 'Report a closure',
                     'Saw a bridge blocked? Let us know.', () {
-                  _confirm(context,
-                      'Thanks — we’ll review the closure and update the network.');
+                  _openMail(
+                    context,
+                    subject: 'Plus 15 - Bridge Closure Report',
+                    body: 'Hi,\n\nI noticed a closure on the +15 network:\n\n'
+                        'Location: \nDate/time: \nDetails: \n',
+                  );
                 }),
                 Divider(height: 1, color: theme.dividerColor),
                 _actionRow(context, Icons.feedback_outlined, 'Send feedback',
-                    'Ideas, bugs, or a place we’re missing.', () {
-                  _confirm(context,
-                      'Thanks for the feedback — it helps us make the +15 easier for everyone.');
+                    'Ideas, bugs, or a place we\'re missing.', () {
+                  _openMail(
+                    context,
+                    subject: 'Plus 15 - App Feedback',
+                    body: 'Hi,\n\nHere\'s my feedback:\n\n',
+                  );
                 }),
               ],
             ),
@@ -100,11 +108,23 @@ class HelpScreen extends StatelessWidget {
     );
   }
 
-  void _confirm(BuildContext context, String message) {
+  Future<void> _openMail(BuildContext context,
+      {required String subject, required String body}) async {
     HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    final uri = Uri(
+      scheme: 'mailto',
+      path: 'feedback@plus15.app',
+      queryParameters: {'subject': subject, 'body': body},
+    );
+    final ok = await launchUrl(uri);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('No mail app found - email us at feedback@plus15.app'),
+          behavior: SnackBarBehavior.floating,
+        ));
+    }
   }
 
   Widget _sectionTitle(ThemeData theme, Color muted, String title) {
@@ -114,7 +134,7 @@ class HelpScreen extends StatelessWidget {
           width: 14,
           height: 3,
           decoration: BoxDecoration(
-            gradient: AppPalette.brandGradient,
+            color: AppPalette.brand,
             borderRadius: BorderRadius.circular(2),
           ),
         ),

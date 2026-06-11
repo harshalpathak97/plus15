@@ -34,16 +34,6 @@ class LocalStorage {
     await saveRoute(route);
   }
 
-  String getThemeMode() {
-    final box = Hive.box<dynamic>(_prefsBox);
-    return box.get('themeMode', defaultValue: 'system') as String;
-  }
-
-  Future<void> setThemeMode(String mode) async {
-    final box = Hive.box<dynamic>(_prefsBox);
-    await box.put('themeMode', mode);
-  }
-
   double getWalkingSpeed() {
     final box = Hive.box<dynamic>(_prefsBox);
     return box.get('walkingSpeed', defaultValue: 4.5) as double;

@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -9,6 +8,7 @@ import '../../data/models/bridge.dart';
 import '../../data/models/entry_point.dart';
 import '../../data/models/shop.dart';
 import '../../data/models/saved_route.dart';
+import '../../data/models/walkway_footprint.dart';
 import '../../data/graph/plus15_graph.dart';
 import '../../data/graph/pathfinder.dart';
 import '../../features/map/utils/path_utils.dart';
@@ -32,6 +32,11 @@ final entryPointsProvider = FutureProvider<List<EntryPoint>>((ref) {
   return ref.read(mapDataSourceProvider).loadEntryPoints();
 });
 
+final walkwayFootprintsProvider =
+    FutureProvider<List<WalkwayFootprint>>((ref) {
+  return ref.read(mapDataSourceProvider).loadWalkwayFootprints();
+});
+
 final graphProvider = FutureProvider<Plus15Graph>((ref) async {
   final buildings = await ref.watch(buildingsProvider.future);
   final bridges = await ref.watch(bridgesProvider.future);
@@ -43,50 +48,6 @@ final pathfinderProvider = FutureProvider<Pathfinder>((ref) async {
   final shops = await ref.watch(shopsProvider.future);
   return Pathfinder(graph: graph, shops: shops);
 });
-
-final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>(
-  (ref) => ThemeModeNotifier(ref.read(localStorageProvider)),
-);
-
-class ThemeModeNotifier extends StateNotifier<ThemeMode> {
-  final LocalStorage _storage;
-
-  ThemeModeNotifier(this._storage) : super(ThemeMode.system) {
-    _load();
-  }
-
-  void _load() {
-    final mode = _storage.getThemeMode();
-    state = _fromString(mode);
-  }
-
-  Future<void> setMode(ThemeMode mode) async {
-    state = mode;
-    await _storage.setThemeMode(_toString(mode));
-  }
-
-  ThemeMode _fromString(String s) {
-    switch (s) {
-      case 'light':
-        return ThemeMode.light;
-      case 'dark':
-        return ThemeMode.dark;
-      default:
-        return ThemeMode.system;
-    }
-  }
-
-  String _toString(ThemeMode m) {
-    switch (m) {
-      case ThemeMode.light:
-        return 'light';
-      case ThemeMode.dark:
-        return 'dark';
-      default:
-        return 'system';
-    }
-  }
-}
 
 final savedRoutesProvider =
     StateNotifierProvider<SavedRoutesNotifier, List<SavedRoute>>(

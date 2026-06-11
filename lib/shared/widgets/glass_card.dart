@@ -5,7 +5,7 @@ import '../../core/theme/app_palette.dart';
 ///
 /// It's an opaque card (not a live blur — that's reserved for floating
 /// overlays so scrolling stays smooth) with a soft brand-tinted glow, a hairline
-/// border, and an optional vertical gradient accent bar on the leading edge.
+/// border, and an optional flat accent bar on the leading edge.
 class GlassCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -14,8 +14,8 @@ class GlassCard extends StatelessWidget {
   final VoidCallback? onLongPress;
   final double radius;
 
-  /// Optional accent gradient drawn as a thin bar down the left edge.
-  final Gradient? accent;
+  /// Optional accent color drawn as a thin bar down the left edge.
+  final Color? accent;
 
   const GlassCard({
     super.key,
@@ -56,15 +56,13 @@ class GlassCard extends StatelessWidget {
           child: InkWell(
             onTap: onTap,
             onLongPress: onLongPress,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (accent != null)
-                  Container(width: 4, decoration: BoxDecoration(gradient: accent)),
-                Expanded(
-                  child: Padding(padding: padding, child: child),
-                ),
-              ],
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: accent == null
+                    ? null
+                    : Border(left: BorderSide(color: accent!, width: 4)),
+              ),
+              child: Padding(padding: padding, child: child),
             ),
           ),
         ),

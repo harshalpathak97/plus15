@@ -561,7 +561,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
       color: AppPalette.brand,
       strokeCap: StrokeCap.round,
       strokeJoin: StrokeJoin.round,
-      gradientColors: const [AppPalette.brand, AppPalette.skywalk],
       borderStrokeWidth: 2.5,
       borderColor: Colors.white.withValues(alpha: 0.85),
     );
@@ -818,11 +817,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                gradient: AppPalette.brandGradient,
+                color: AppPalette.brand,
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: [
                   BoxShadow(
-                    color: AppPalette.brand.withValues(alpha: 0.35),
+                    color: AppPalette.brand.withValues(alpha: 0.3),
                     blurRadius: 16,
                     offset: const Offset(0, 6),
                   ),
@@ -849,16 +848,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
               onTap: () {
                 HapticFeedback.lightImpact();
                 context.push('/alerts');
-              },
-            ),
-            const SizedBox(width: 8),
-            _circleButton(
-              context,
-              isDark,
-              icon: Icons.person_outline_rounded,
-              onTap: () {
-                HapticFeedback.lightImpact();
-                context.go('/settings');
               },
             ),
           ],
@@ -1249,6 +1238,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
           _animatedMove(_mapController.camera.center, (z - 0.5).clamp(10, 18));
         }, isDark),
         const SizedBox(height: 14),
+        _controlBtn(Icons.view_in_ar_rounded, () {
+          context.push('/map3d');
+        }, isDark),
+        const SizedBox(height: 8),
         _controlBtn(Icons.location_city_rounded, () {
           _animatedMove(_plus15Center, 15.8);
         }, isDark),
@@ -1323,7 +1316,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     );
   }
 
-  void _startQuickRoute(String fromId, String toId, String mode) async {
+  Future<void> _startQuickRoute(String fromId, String toId, String mode) async {
     final pathfinder = await ref.read(pathfinderProvider.future);
     final result = pathfinder.findRoute(fromId, toId, mode: mode);
     if (result != null) {

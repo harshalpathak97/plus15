@@ -60,13 +60,7 @@ class SavedRoutesScreen extends ConsumerWidget {
                                 padding: const EdgeInsets.only(right: 22),
                                 margin: const EdgeInsets.only(bottom: 12),
                                 decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      AppPalette.destination
-                                          .withValues(alpha: 0.85),
-                                      AppPalette.destination,
-                                    ],
-                                  ),
+                                  color: AppPalette.destination,
                                   borderRadius: BorderRadius.circular(18),
                                 ),
                                 child: const Icon(Icons.delete_rounded,
@@ -118,11 +112,11 @@ class SavedRoutesScreen extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.all(26),
             decoration: BoxDecoration(
-              gradient: AppPalette.brandGradient,
+              color: AppPalette.brand,
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: AppPalette.brand.withValues(alpha: 0.35),
+                  color: AppPalette.brand.withValues(alpha: 0.3),
                   blurRadius: 24,
                   offset: const Offset(0, 10),
                 ),
@@ -164,11 +158,7 @@ class SavedRoutesScreen extends ConsumerWidget {
 
     return GlassCard(
       margin: const EdgeInsets.only(bottom: 12),
-      accent: LinearGradient(
-        colors: [modeColor, modeColor.withValues(alpha: 0.6)],
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-      ),
+      accent: modeColor,
       onTap: () => _goRoute(context, ref, route),
       onLongPress: () => _showRenameDialog(context, ref, route),
       child: Row(
@@ -267,6 +257,7 @@ class SavedRoutesScreen extends ConsumerWidget {
   void _goRoute(
       BuildContext context, WidgetRef ref, SavedRoute route) async {
     final navigator = GoRouter.of(context);
+    final messenger = ScaffoldMessenger.of(context);
     final pathfinder = await ref.read(pathfinderProvider.future);
     final result = pathfinder.findRoute(route.fromId, route.toId,
         mode: route.routeType);
@@ -281,6 +272,13 @@ class SavedRoutesScreen extends ConsumerWidget {
             totalDistanceM: result.totalDistance,
           );
       navigator.go('/map');
+    } else {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('Route unavailable — buildings may be disconnected.'),
+          behavior: SnackBarBehavior.floating,
+        ));
     }
   }
 

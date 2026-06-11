@@ -43,9 +43,8 @@ class RouteOptionCard extends StatelessWidget {
             : (Matrix4.identity()..scale(0.97)),
         transformAlignment: Alignment.center,
         decoration: BoxDecoration(
-          gradient: isSelected ? AppPalette.brandGradient : null,
           color: isSelected
-              ? null
+              ? AppPalette.brand
               : (isDark ? AppPalette.cardDark : AppPalette.cardLight),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(

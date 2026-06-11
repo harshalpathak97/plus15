@@ -57,14 +57,7 @@ class ShopDetailSheet extends ConsumerWidget {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          _categoryColor(),
-                          _categoryColor().withValues(alpha: 0.72),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                      color: _categoryColor(),
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(

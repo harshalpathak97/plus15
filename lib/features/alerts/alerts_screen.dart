@@ -141,7 +141,7 @@ class AlertsScreen extends ConsumerWidget {
 
     return GlassCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-      accent: LinearGradient(colors: [accent, accent]),
+      accent: accent,
       onTap: from == null
           ? null
           : () {

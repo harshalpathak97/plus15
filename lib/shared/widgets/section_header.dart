@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_palette.dart';
 
-/// A consistent section label: a short brand-gradient tick followed by a
+/// A consistent section label: a short brand tick followed by a
 /// small-caps title. Used to head grouped content on the secondary screens.
 class SectionHeader extends StatelessWidget {
   final String title;
@@ -21,7 +21,7 @@ class SectionHeader extends StatelessWidget {
           width: 14,
           height: 3,
           decoration: BoxDecoration(
-            gradient: AppPalette.brandGradient,
+            color: AppPalette.brand,
             borderRadius: BorderRadius.circular(2),
           ),
         ),

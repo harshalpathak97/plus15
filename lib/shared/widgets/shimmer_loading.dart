@@ -27,7 +27,7 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat();
+    )..repeat(reverse: true);
   }
 
   @override
@@ -39,6 +39,9 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final base = isDark ? AppPalette.cardDark : AppPalette.borderLight;
+    final highlight =
+        isDark ? AppPalette.borderDark : const Color(0xFFF1F3F9);
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
@@ -47,21 +50,7 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
           height: widget.height,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(widget.borderRadius),
-            gradient: LinearGradient(
-              begin: Alignment(-1.0 + 2.0 * _controller.value, 0),
-              end: Alignment(1.0 + 2.0 * _controller.value, 0),
-              colors: isDark
-                  ? [
-                      AppPalette.cardDark,
-                      AppPalette.borderDark,
-                      AppPalette.cardDark,
-                    ]
-                  : [
-                      AppPalette.borderLight,
-                      const Color(0xFFF1F3F9),
-                      AppPalette.borderLight,
-                    ],
-            ),
+            color: Color.lerp(base, highlight, _controller.value),
           ),
         );
       },
