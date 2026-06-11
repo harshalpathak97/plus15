@@ -63,4 +63,14 @@ class LocalStorage {
     final box = Hive.box<dynamic>(_prefsBox);
     await box.put('accessibilityMode', value);
   }
+
+  bool getOnboardingComplete() {
+    final box = Hive.box<dynamic>(_prefsBox);
+    return box.get('onboardingComplete', defaultValue: false) as bool;
+  }
+
+  Future<void> setOnboardingComplete(bool value) async {
+    final box = Hive.box<dynamic>(_prefsBox);
+    await box.put('onboardingComplete', value);
+  }
 }

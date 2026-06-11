@@ -11,6 +11,8 @@ import '../../features/saved_routes/saved_routes_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/alerts/alerts_screen.dart';
 import '../../features/help/help_screen.dart';
+import '../../features/onboarding/onboarding_screen.dart';
+import '../../data/datasources/local_storage.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -28,7 +30,19 @@ class _Branch {
 final appRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
   initialLocation: '/map',
+  redirect: (context, state) {
+    final complete = LocalStorage().getOnboardingComplete();
+    final atOnboarding = state.matchedLocation == '/onboarding';
+    if (!complete && !atOnboarding) return '/onboarding';
+    if (complete && atOnboarding) return '/map';
+    return null;
+  },
   routes: [
+    GoRoute(
+      path: '/onboarding',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (_, __) => const OnboardingScreen(),
+    ),
     StatefulShellRoute.indexedStack(
       builder: (context, state, shell) => ScaffoldWithNav(shell: shell),
       branches: [

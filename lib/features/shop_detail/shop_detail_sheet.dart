@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_palette.dart';
+import '../../core/theme/app_spacing.dart';
+import '../../data/models/building.dart';
 import '../../data/models/shop.dart';
+import '../../shared/providers/providers.dart';
 
-class ShopDetailSheet extends StatelessWidget {
+class ShopDetailSheet extends ConsumerWidget {
   final Shop shop;
   final String? buildingName;
 
@@ -14,12 +21,12 @@ class ShopDetailSheet extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.45,
-      maxChildSize: 0.7,
+      initialChildSize: 0.5,
+      maxChildSize: 0.78,
       minChildSize: 0.3,
       expand: false,
       builder: (context, controller) {
@@ -31,7 +38,7 @@ class ShopDetailSheet extends StatelessWidget {
           ),
           child: ListView(
             controller: controller,
-            padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
             children: [
               Center(
                 child: Container(
@@ -99,12 +106,17 @@ class ShopDetailSheet extends StatelessWidget {
                 ],
               ).animate().fadeIn(duration: 300.ms),
               const SizedBox(height: 20),
+              _ctaRow(context, ref)
+                  .animate()
+                  .fadeIn(duration: 300.ms, delay: 80.ms)
+                  .slideY(begin: 0.15, end: 0),
+              const SizedBox(height: 20),
               if (shop.description.isNotEmpty) ...[
                 Text(shop.description,
-                    style: theme.textTheme.bodyLarge
-                        ?.copyWith(height: 1.5))
+                        style:
+                            theme.textTheme.bodyLarge?.copyWith(height: 1.5))
                     .animate()
-                    .fadeIn(duration: 300.ms, delay: 100.ms),
+                    .fadeIn(duration: 300.ms, delay: 120.ms),
                 const SizedBox(height: 20),
               ],
               _buildInfoRow(
@@ -136,6 +148,113 @@ class ShopDetailSheet extends StatelessWidget {
         );
       },
     );
+  }
+
+  Widget _ctaRow(BuildContext context, WidgetRef ref) {
+    final hasPhone = shop.phone.trim().isNotEmpty;
+    final hasWeb = shop.website.trim().isNotEmpty;
+
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: FilledButton.icon(
+            onPressed: () => _navigateHere(context, ref),
+            icon: const Icon(Icons.navigation_rounded, size: 20),
+            label: const Text('Navigate here'),
+          ),
+        ),
+        if (hasPhone || hasWeb) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (hasPhone)
+                Expanded(
+                  child: _secondaryCta(
+                    context,
+                    icon: Icons.call_rounded,
+                    label: 'Call',
+                    onTap: () => _launch(
+                        context, Uri(scheme: 'tel', path: _telDigits())),
+                  ),
+                ),
+              if (hasPhone && hasWeb) const SizedBox(width: 10),
+              if (hasWeb)
+                Expanded(
+                  child: _secondaryCta(
+                    context,
+                    icon: Icons.public_rounded,
+                    label: 'Website',
+                    onTap: () =>
+                        _launch(context, Uri.parse(shop.website.trim())),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _secondaryCta(BuildContext context,
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
+    return SizedBox(
+      height: 48,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppPalette.brand,
+          side: BorderSide(color: AppPalette.brand.withValues(alpha: 0.4)),
+          shape: RoundedRectangleBorder(borderRadius: AppRadii.rControl),
+        ),
+      ),
+    );
+  }
+
+  String _telDigits() =>
+      shop.phone.replaceAll(RegExp(r'[^0-9+]'), '');
+
+  void _navigateHere(BuildContext context, WidgetRef ref) {
+    HapticFeedback.mediumImpact();
+    final buildings =
+        ref.read(buildingsProvider).valueOrNull ?? const <Building>[];
+    Building? target;
+    for (final b in buildings) {
+      if (b.id == shop.buildingId) {
+        target = b;
+        break;
+      }
+    }
+    if (target != null) {
+      ref.read(routeToProvider.notifier).state = target;
+      ref.read(selectedBuildingProvider.notifier).state = null;
+    }
+    Navigator.of(context).pop();
+    context.go('/route');
+  }
+
+  Future<void> _launch(BuildContext context, Uri uri) async {
+    HapticFeedback.lightImpact();
+    try {
+      final ok =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && context.mounted) {
+        _toast(context, 'Couldn’t open that link.');
+      }
+    } catch (_) {
+      if (context.mounted) _toast(context, 'Couldn’t open that link.');
+    }
+  }
+
+  void _toast(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildInfoRow(
