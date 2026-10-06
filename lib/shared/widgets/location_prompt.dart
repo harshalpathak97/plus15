@@ -9,6 +9,7 @@ Future<bool> ensureLocation(BuildContext context, WidgetRef ref) async {
   final block = await requestLocationAccess(ref);
   if (block == LocationBlock.none) return true;
   messenger.showSnackBar(SnackBar(
+    persist: false, // auto-dismiss despite the action
     content: Text(block == LocationBlock.serviceOff
         ? 'Location is turned off on this phone.'
         : "Plus 15 can't use your location."),

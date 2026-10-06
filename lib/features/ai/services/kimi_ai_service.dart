@@ -27,9 +27,10 @@ const kimiModel = 'moonshotai/kimi-k3';
 /// Tried in order when Kimi fails, and straight away for a quick answer.
 const fallbackModels = ['openai/gpt-oss-20b', 'meta/llama-3.2-11b-vision-instruct'];
 
-/// Kimi often waits 30–70 s in NVIDIA's queue before its first token; after
-/// this long the quick model answers instead (the user can also skip ahead).
-const _kimiFirstToken = Duration(seconds: 75);
+/// Kimi often waits 30–70 s in NVIDIA's queue before its first token. Waiting
+/// longer than this feels broken, so the quick model answers instead (the
+/// user can also skip ahead from 6 s).
+const _kimiFirstToken = Duration(seconds: 45);
 const _fallbackFirstToken = Duration(seconds: 20);
 const _messageTimeout = Duration(seconds: 150);
 

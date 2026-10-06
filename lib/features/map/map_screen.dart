@@ -304,7 +304,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                         userAgentPackageName: 'com.plus15.plus15_navigator',
                         maxNativeZoom: basemap.maxNativeZoom,
                         maxZoom: 20,
-                        tileDisplay: const TileDisplay.fadeIn(),
+                        // No fade: a layer rebuilt while the map is hidden (theme switched in
+                        // Settings) never ran its fade and stayed blank until a pan.
+                        tileDisplay: const TileDisplay.instantaneous(),
                         fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       ),
                       // Display layer: the City's +15 walkway footprints.
@@ -350,12 +352,17 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                   top: MediaQuery.of(context).padding.top + 12,
                   left: 16,
                   right: 16,
-                  child: _buildHeader(
-                      context,
-                      closuresCount,
-                      nearestName,
-                      conditions?.networkStatusAt(now),
-                      userLocation.hasValue && userLocation.value == null),
+                  // Floating chrome over the map caps text growth so the map
+                  // stays usable; the sheet and other screens scale fully.
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.3,
+                    child: _buildHeader(
+                        context,
+                        closuresCount,
+                        nearestName,
+                        conditions?.networkStatusAt(now),
+                        userLocation.hasValue && userLocation.value == null),
+                  ),
                 ),
                 aboveSheet(_buildMapControls(context, userLocation), right: 16, needs: 300),
                 // Tile attribution (required by the providers).
@@ -374,7 +381,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           child: Text(
                             basemap.attribution,
-                            maxLines: 2,
+                            maxLines: 3,
+                            textScaler: MediaQuery.textScalerOf(context)
+                                .clamp(maxScaleFactor: 1.3),
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                 fontSize: 10, color: darkSurface ? Colors.white70 : Colors.black87),
@@ -919,7 +928,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         },
         icon: Badge(
           isLabelVisible: badge > 0,
-          label: Text('$badge'),
+          label: ExcludeSemantics(child: Text('$badge')), // the tooltip says it
           backgroundColor: AppPalette.danger,
           child: Icon(icon),
         ),

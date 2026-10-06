@@ -32,7 +32,8 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
     final shops = ref.watch(shopsProvider).valueOrNull ?? const <Shop>[];
     final places = shops.where((s) => placeIds.contains(s.id)).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
-    final bMap = ref.watch(networkProvider).valueOrNull?.buildingById ?? const <String, NetBuilding>{};
+    final bMap =
+        ref.watch(networkProvider).valueOrNull?.buildingById ?? const <String, NetBuilding>{};
 
     return Scaffold(
       body: SafeArea(
@@ -60,8 +61,12 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
               _empty(context, Icons.bookmark_border_rounded, 'No saved routes yet',
                   'Plan a route and tap Save to keep it here.', 'Plan a route', '/route'),
             if (_places && places.isEmpty)
-              _empty(context, Icons.storefront_outlined, 'No saved places yet',
-                  'Tap the bookmark on any shop or service to save it.', 'Browse the directory',
+              _empty(
+                  context,
+                  Icons.storefront_outlined,
+                  'No saved places yet',
+                  'Tap the bookmark on any shop or service to save it.',
+                  'Browse the directory',
                   '/directory'),
             if (!_places)
               for (final r in routes) _routeTile(context, r, bMap),
@@ -75,7 +80,8 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
                       maxLines: 1, overflow: TextOverflow.ellipsis),
                   trailing: IconButton(
                     tooltip: 'Remove from saved',
-                    icon: Icon(Icons.bookmark_rounded, color: Theme.of(context).colorScheme.primary),
+                    icon:
+                        Icon(Icons.bookmark_rounded, color: Theme.of(context).colorScheme.primary),
                     onPressed: () => ref.read(savedPlacesProvider.notifier).toggle(s.id),
                   ),
                   onTap: () => showShopDetail(context, s),
@@ -86,8 +92,8 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
     );
   }
 
-  Widget _empty(BuildContext context, IconData icon, String title, String body, String cta,
-      String path) {
+  Widget _empty(
+      BuildContext context, IconData icon, String title, String body, String cta, String path) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.xxxl),
@@ -99,7 +105,8 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
           const SizedBox(height: AppSpacing.xs),
           Text(body,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              style:
+                  theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
           const SizedBox(height: AppSpacing.lg),
           OutlinedButton(onPressed: () => context.go(path), child: Text(cta)),
         ],
@@ -180,6 +187,7 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
+        persist: false, // auto-dismiss despite the action
         content: const Text('Route deleted'),
         action: SnackBarAction(
             label: 'Undo', onPressed: () => ref.read(savedRoutesProvider.notifier).add(r)),
@@ -198,7 +206,8 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
     // A route only blocked by a closure is still worth previewing.
     final route = result.route ?? result.viaClosed;
     if (route == null) {
-      messenger.showSnackBar(SnackBar(content: Text(result.unavailableReason ?? 'Route unavailable.')));
+      messenger
+          .showSnackBar(SnackBar(content: Text(result.unavailableReason ?? 'Route unavailable.')));
       return;
     }
     ref.read(activeRouteProvider.notifier).state = route;
@@ -230,7 +239,9 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
           FilledButton(
             onPressed: () {
               if (controller.text.trim().isNotEmpty) {
-                ref.read(savedRoutesProvider.notifier).update(r.copyWith(name: controller.text.trim()));
+                ref
+                    .read(savedRoutesProvider.notifier)
+                    .update(r.copyWith(name: controller.text.trim()));
               }
               Navigator.pop(ctx);
             },
