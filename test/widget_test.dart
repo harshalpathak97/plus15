@@ -3,6 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plus15_navigator/features/directory/directory_screen.dart';
 import 'package:plus15_navigator/features/map3d/map3d_screen.dart';
+import 'package:plus15_navigator/data/datasources/local_storage.dart';
+import 'package:plus15_navigator/shared/providers/providers.dart';
+import 'package:plus15_navigator/shared/widgets/brand_logo.dart';
+
+class _MemoryStorage extends LocalStorage {
+  String mode;
+  _MemoryStorage([this.mode = 'light']);
+  @override
+  String getThemeMode() => mode;
+  @override
+  Future<void> setThemeMode(String m) async => mode = m;
+}
 
 void main() {
   testWidgets('Directory loads real shop data and renders groups',
@@ -20,7 +32,24 @@ void main() {
     // The header counts real entries loaded from shops.json.
     expect(find.textContaining('places on the +15'), findsOneWidget);
     // The list is grouped by building, alphabetically — first group visible.
-    expect(find.text('240 FOURTH'), findsOneWidget);
+    expect(find.text('333 Fifth Avenue SW'), findsOneWidget);
+    // Every listed business shows its brand logo.
+    expect(find.byType(BrandLogo), findsWidgets);
+    expect(find.byType(Image), findsWidgets);
+  });
+
+  test('theme is light by default and dark only when chosen', () async {
+    final storage = _MemoryStorage();
+    final c = ProviderContainer(overrides: [localStorageProvider.overrideWithValue(storage)]);
+    addTearDown(c.dispose);
+    expect(c.read(themeModeProvider), ThemeMode.light);
+    await c.read(themeModeProvider.notifier).setDark(true);
+    expect(c.read(themeModeProvider), ThemeMode.dark);
+    expect(storage.mode, 'dark');
+    final c2 = ProviderContainer(
+        overrides: [localStorageProvider.overrideWithValue(_MemoryStorage('dark'))]);
+    addTearDown(c2.dispose);
+    expect(c2.read(themeModeProvider), ThemeMode.dark);
   });
 
   testWidgets('3D view builds in free mode with its canvas and chrome',

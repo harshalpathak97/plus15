@@ -4,8 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:latlong2/latlong.dart' show LatLng;
 import '../../core/theme/app_palette.dart';
-import '../../data/models/building.dart';
+import '../../routing/network.dart';
 import '../../data/models/walkway_footprint.dart';
 import '../../shared/providers/providers.dart';
 import 'scene3d.dart';
@@ -26,8 +27,7 @@ class Map3DScreen extends ConsumerStatefulWidget {
 
 enum _Mode { free, flythrough, live }
 
-class _Map3DScreenState extends ConsumerState<Map3DScreen>
-    with SingleTickerProviderStateMixin {
+class _Map3DScreenState extends ConsumerState<Map3DScreen> with SingleTickerProviderStateMixin {
   late final AnimationController _ticker;
   Duration _lastElapsed = Duration.zero;
 
@@ -40,6 +40,9 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
 
   _Mode _mode = _Mode.free;
   RoutePath3D? _routePath;
+
+  /// The route _routePath was built from; a reroute replaces it.
+  Object? _routeSource;
   double _t = 0; // progress along the route, 0..1
   bool _playing = true;
   bool _interacted = false;
@@ -51,6 +54,14 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
 
   // Smoothed live-progress target so the camera glides, not jumps.
   double _liveT = 0;
+
+  /// The free view stops repainting once it's still, to save battery.
+  final _sinceWake = Stopwatch()..start();
+
+  void _wake() {
+    _sinceWake.reset();
+    if (!_ticker.isAnimating) _ticker.forward();
+  }
 
   @override
   void initState() {
@@ -80,7 +91,12 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
     final path = _routePath;
     switch (_mode) {
       case _Mode.free:
-        if (!_interacted) _camera.yaw += dt * 0.05; // slow idle orbit
+        // Orbit slowly for a while, then rest until touched.
+        if (_sinceWake.elapsed > const Duration(seconds: 30)) {
+          _ticker.stop();
+          return;
+        }
+        if (!_interacted) _camera.yaw += dt * 0.05;
       case _Mode.flythrough:
         if (path == null) break;
         if (_playing) {
@@ -95,8 +111,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
         if (path == null) break;
         final session = ref.read(navigationSessionProvider);
         if (session.totalDistanceM > 0) {
-          _liveT = (1 - session.remainingDistanceM / session.totalDistanceM)
-              .clamp(0.0, 1.0);
+          _liveT = (1 - session.remainingDistanceM / session.totalDistanceM).clamp(0.0, 1.0);
         }
         // Glide toward the live position.
         _t += (_liveT - _t) * math.min(1.0, dt * 2.0);
@@ -111,8 +126,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
     _camera.target = Offset.lerp(_camera.target, p, ease)!;
     _camera.targetZ += (6.0 - _camera.targetZ) * ease;
     if (!_interacted) {
-      _camera.yaw =
-          lerpAngle(_camera.yaw, path.headingAt(_t), math.min(1.0, dt * 2.2));
+      _camera.yaw = lerpAngle(_camera.yaw, path.headingAt(_t), math.min(1.0, dt * 2.2));
     }
   }
 
@@ -128,8 +142,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
     if (live) {
       final session = ref.read(navigationSessionProvider);
       if (session.totalDistanceM > 0) {
-        _t = (1 - session.remainingDistanceM / session.totalDistanceM)
-            .clamp(0.0, 1.0);
+        _t = (1 - session.remainingDistanceM / session.totalDistanceM).clamp(0.0, 1.0);
         _liveT = _t;
         _camera.target = path.pointAt(_t);
       }
@@ -138,6 +151,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
 
   void _resetCamera() {
     HapticFeedback.lightImpact();
+    _wake();
     _interacted = false;
     final path = _routePath;
     if (path != null) {
@@ -162,12 +176,14 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
   // --- Gestures ------------------------------------------------------------
 
   void _onScaleStart(ScaleStartDetails d) {
+    _wake();
     _interacted = true;
     _startDistance = _camera.distance;
     _startYaw = _camera.yaw;
   }
 
   void _onScaleUpdate(ScaleUpdateDetails d) {
+    _sinceWake.reset();
     if (d.pointerCount >= 2) {
       _camera.distance = _startDistance / d.scale;
       _camera.yaw = _startYaw - d.rotation;
@@ -199,26 +215,36 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final footprints =
-        ref.watch(walkwayFootprintsProvider).valueOrNull ?? const [];
-    final buildings =
-        ref.watch(buildingsProvider).valueOrNull ?? const <Building>[];
+    final footprints = ref.watch(walkwayFootprintsProvider).valueOrNull ?? const [];
+    final buildings = ref.watch(buildingsProvider).valueOrNull ?? const <NetBuilding>[];
 
-    // Pick the mode from app state on every build (cheap, idempotent).
-    final smoothed = ref.watch(smoothedRouteProvider);
+    // Pick the mode from app state on every build (cheap, idempotent). The
+    // 3D route is the routed edge geometry itself, rebuilt on reroute.
+    final route = ref.watch(activeRouteProvider);
+    final points =
+        route == null ? const <LatLng>[] : [for (final p in route.geometry) LatLng(p[0], p[1])];
     final session = ref.watch(navigationSessionProvider);
-    final wantLive = session.isActive && smoothed.length >= 2;
-    final wantRoute = smoothed.length >= 2;
-    if (wantRoute && _routePath == null) {
-      final path = RoutePath3D.fromLatLng(smoothed);
+    final wantLive = session.isActive && points.length >= 2;
+    final wantRoute = points.length >= 2;
+    if (wantRoute && (_routePath == null || !identical(_routeSource, route))) {
+      _routeSource = route;
+      final path = RoutePath3D.fromLatLng(points);
       if (path.isUsable) _enterRouteMode(path, wantLive);
+      _wake();
     } else if (wantLive && _mode == _Mode.flythrough) {
       _mode = _Mode.live;
+    } else if (!wantLive && _mode == _Mode.live) {
+      _mode = _Mode.flythrough; // navigation stopped; the route stays shown
+    } else if (!wantRoute && _routePath != null) {
+      // Route cleared: back to the free view of the whole network.
+      _routePath = null;
+      _routeSource = null;
+      _mode = _Mode.free;
+      _wake();
     }
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF080A14) : const Color(0xFFEEF1F7),
+      backgroundColor: isDark ? const Color(0xFF0B0C0E) : const Color(0xFFEFEFEB),
       body: Stack(
         children: [
           Positioned.fill(
@@ -245,28 +271,39 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           ),
           _topBar(context, theme, isDark),
           if (_showHint) _hint(theme, isDark),
-          if (_mode == _Mode.flythrough && _routePath != null)
-            _flythroughControls(theme, isDark),
+          if (_mode == _Mode.flythrough && _routePath != null) _flythroughControls(theme, isDark),
           if (_mode == _Mode.live) _liveBadge(theme, isDark),
         ],
       ),
     );
   }
 
-  List<Building> _labelBuildings(List<Building> all) {
+  List<NetBuilding> _labelBuildings(List<NetBuilding> all) {
     const ids = {
-      'the_core', 'bankers_hall', 'suncor_energy_centre', 'bow_valley_square',
-      'brookfield_place', 'stephen_ave_place', 'fifth_avenue_place',
-      'gulf_canada_square', 'eighth_avenue_place', 'city_hall',
-      'calgary_tower', 'glenbow_museum', 'arts_commons', 'the_bow',
-      'eau_claire_tower', 'hudsons_bay', 'palliser_hotel', 'centennial_place',
+      'the_core',
+      'bankers_hall',
+      'suncor_energy_centre',
+      'bow_valley_square',
+      'brookfield_place',
+      'stephen_ave_place',
+      'fifth_avenue_place',
+      'gulf_canada_square',
+      'eighth_avenue_place',
+      'city_hall',
+      'calgary_tower',
+      'glenbow_museum',
+      'arts_commons',
+      'the_bow',
+      'eau_claire_tower',
+      'hudsons_bay',
+      'palliser_hotel',
+      'centennial_place',
     };
     return all.where((b) => ids.contains(b.id)).toList(growable: false);
   }
 
   Widget _topBar(BuildContext context, ThemeData theme, bool isDark) {
-    final surface =
-        (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.9);
+    final surface = (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.9);
     final subtitle = switch (_mode) {
       _Mode.free => 'The whole network, 15 feet up',
       _Mode.flythrough => 'Route fly-through',
@@ -281,6 +318,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           _roundButton(
             isDark,
             icon: Icons.arrow_back_rounded,
+            tooltip: 'Back',
             onTap: () => context.pop(),
           ),
           const SizedBox(width: 10),
@@ -302,10 +340,11 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('+15 in 3D',
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w800)),
+                      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
                   Text(subtitle,
-                      style: theme.textTheme.bodySmall, maxLines: 1),
+                      style: theme.textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
@@ -314,6 +353,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           _roundButton(
             isDark,
             icon: Icons.center_focus_strong_rounded,
+            tooltip: 'Reset view',
             onTap: _resetCamera,
           ),
         ],
@@ -322,22 +362,22 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
   }
 
   Widget _roundButton(bool isDark,
-      {required IconData icon, required VoidCallback onTap}) {
-    return Material(
-      color: (isDark ? AppPalette.cardDark : Colors.white)
-          .withValues(alpha: 0.9),
-      shape: const CircleBorder(),
-      elevation: 2,
-      shadowColor: Colors.black38,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 42,
-          height: 42,
-          child: Icon(icon,
-              size: 20,
-              color: isDark ? AppPalette.inkDark : AppPalette.ink),
+      {required IconData icon, required String tooltip, required VoidCallback onTap}) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.9),
+        shape: const CircleBorder(),
+        elevation: 2,
+        shadowColor: Colors.black38,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: Icon(icon, size: 20, color: isDark ? AppPalette.inkDark : AppPalette.ink),
+          ),
         ),
       ),
     );
@@ -353,8 +393,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: (isDark ? AppPalette.cardDark : Colors.white)
-                  .withValues(alpha: 0.88),
+              color: (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.88),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
@@ -378,8 +417,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
       child: Container(
         padding: const EdgeInsets.fromLTRB(8, 4, 14, 4),
         decoration: BoxDecoration(
-          color: (isDark ? AppPalette.cardDark : Colors.white)
-              .withValues(alpha: 0.92),
+          color: (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.92),
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
@@ -394,10 +432,9 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           builder: (context, _) => Row(
             children: [
               IconButton(
+                tooltip: _playing && _t < 1 ? 'Pause' : 'Play',
                 icon: Icon(
-                  _playing && _t < 1
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
+                  _playing && _t < 1 ? Icons.pause_rounded : Icons.play_arrow_rounded,
                   color: AppPalette.brand,
                 ),
                 onPressed: () {
@@ -412,10 +449,8 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
                 child: SliderTheme(
                   data: SliderTheme.of(context).copyWith(
                     trackHeight: 3,
-                    thumbShape:
-                        const RoundSliderThumbShape(enabledThumbRadius: 7),
-                    overlayShape:
-                        const RoundSliderOverlayShape(overlayRadius: 14),
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
                     activeTrackColor: AppPalette.brand,
                     thumbColor: AppPalette.brand,
                     inactiveTrackColor: AppPalette.brand.withValues(alpha: 0.15),
@@ -431,8 +466,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
               ),
               Text(
                 '${(_routePath!.total * _t).round()} m',
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: theme.textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -452,8 +486,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
             decoration: BoxDecoration(
-              color: (isDark ? AppPalette.cardDark : Colors.white)
-                  .withValues(alpha: 0.92),
+              color: (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.92),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -462,13 +495,11 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
                 Container(
                   width: 8,
                   height: 8,
-                  decoration: const BoxDecoration(
-                      shape: BoxShape.circle, color: AppPalette.origin),
+                  decoration: const BoxDecoration(shape: BoxShape.circle, color: AppPalette.origin),
                 ),
                 const SizedBox(width: 8),
                 Text('Live — following your progress',
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+                    style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -501,7 +532,7 @@ class _Face {
 class _NetworkPainter extends CustomPainter {
   final OrbitCamera camera;
   final List<WalkwayFootprint> footprints;
-  final List<Building> labelBuildings;
+  final List<NetBuilding> labelBuildings;
   final RoutePath3D? routePath;
   final double? Function() progressT;
   final bool Function() showPuck;
@@ -546,8 +577,7 @@ class _NetworkPainter extends CustomPainter {
         rings.add(pts);
       }
       if (n == 0) continue;
-      prisms.add(
-          _Prism(rings, Offset(cx / n, cy / n), f.isBridge, f.isOpenToSky));
+      prisms.add(_Prism(rings, Offset(cx / n, cy / n), f.isBridge, f.isOpenToSky));
     }
     _prismCache = prisms;
     _prismCacheKey = footprints.length;
@@ -568,7 +598,7 @@ class _NetworkPainter extends CustomPainter {
   void _paintGrid(Canvas canvas, CameraFrame frame) {
     const spacing = 150.0;
     const radius = 1200.0;
-    final color = isDark ? const Color(0xFF151A2A) : const Color(0xFFDDE2EE);
+    final color = isDark ? const Color(0xFF17191C) : const Color(0xFFE3E3DE);
     final paint = Paint()
       ..color = color
       ..strokeWidth = 1;
@@ -590,14 +620,12 @@ class _NetworkPainter extends CustomPainter {
 
   void _paintNetwork(Canvas canvas, CameraFrame frame) {
     // Theme-resolved flat fills. Bridges get the skywalk teal identity.
-    final topEnclosed = isDark ? const Color(0xFF252B45) : Colors.white;
-    final sideEnclosed =
-        isDark ? const Color(0xFF161A2C) : const Color(0xFFC7CCDD);
-    final topBridge = isDark ? const Color(0xFF11424C) : const Color(0xFFD7F1F5);
-    final sideBridge =
-        isDark ? const Color(0xFF0A2B32) : const Color(0xFF9CC8D1);
-    final bridgeEdge = (isDark ? AppPalette.skywalkBright : AppPalette.skywalk)
-        .withValues(alpha: 0.55);
+    final topEnclosed = isDark ? const Color(0xFF23262B) : Colors.white;
+    final sideEnclosed = isDark ? const Color(0xFF15171A) : const Color(0xFFC9C8C2);
+    final topBridge = isDark ? const Color(0xFF2E3740) : const Color(0xFFDCE3E8);
+    final sideBridge = isDark ? const Color(0xFF1C2228) : const Color(0xFFA9B5BE);
+    final bridgeEdge =
+        (isDark ? AppPalette.skywalkBright : AppPalette.skywalk).withValues(alpha: 0.55);
     final shadow = Colors.black.withValues(alpha: isDark ? 0.3 : 0.06);
 
     final faces = <_Face>[];
@@ -609,8 +637,7 @@ class _NetworkPainter extends CustomPainter {
 
       final top = prism.isBridge ? topBridge : topEnclosed;
       final side = prism.isBridge ? sideBridge : sideEnclosed;
-      final topColor =
-          prism.isOpenToSky ? top.withValues(alpha: 0.55) : top;
+      final topColor = prism.isOpenToSky ? top.withValues(alpha: 0.55) : top;
       final detailed = d < 600;
 
       for (final ring in prism.rings) {
@@ -736,8 +763,7 @@ class _NetworkPainter extends CustomPainter {
         ..strokeWidth = 9
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = (isDark ? Colors.black : Colors.white)
-            .withValues(alpha: 0.65),
+        ..color = (isDark ? Colors.black : Colors.white).withValues(alpha: 0.65),
     );
     canvas.drawPath(
       screen,
@@ -767,11 +793,7 @@ class _NetworkPainter extends CustomPainter {
       final p = path.pointAt(t);
       final sp = frame.project(p.dx, p.dy, z + 0.4);
       if (sp != null) {
-        canvas.drawCircle(
-            sp,
-            13,
-            Paint()
-              ..color = routeColor.withValues(alpha: 0.25));
+        canvas.drawCircle(sp, 13, Paint()..color = routeColor.withValues(alpha: 0.25));
         canvas.drawCircle(sp, 9, Paint()..color = Colors.white);
         canvas.drawCircle(sp, 6.5, Paint()..color = routeColor);
       }
@@ -779,12 +801,11 @@ class _NetworkPainter extends CustomPainter {
   }
 
   void _paintLabels(Canvas canvas, CameraFrame frame) {
-    final pillColor = (isDark ? AppPalette.cardDark : Colors.white)
-        .withValues(alpha: 0.85);
+    final pillColor = (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.85);
     final placed = <Rect>[];
 
     // Nearest labels win declutter priority.
-    final entries = <(double, Offset, Building)>[];
+    final entries = <(double, Offset, NetBuilding)>[];
     for (final b in labelBuildings) {
       final local = Scene3D.toLocal(b.lat, b.lng);
       final d = frame.depth(local.dx, local.dy, _roofZ);
@@ -837,8 +858,7 @@ class _NetworkPainter extends CustomPainter {
         Offset(sp.dx, rect.bottom),
         stemEnd,
         Paint()
-          ..color = (isDark ? Colors.white : Colors.black)
-              .withValues(alpha: 0.18 * alpha)
+          ..color = (isDark ? Colors.white : Colors.black).withValues(alpha: 0.18 * alpha)
           ..strokeWidth = 1,
       );
     }

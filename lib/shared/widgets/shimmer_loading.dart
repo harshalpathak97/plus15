@@ -27,7 +27,17 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = 0.5;
+    } else if (!_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    }
   }
 
   @override
@@ -41,7 +51,7 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final base = isDark ? AppPalette.cardDark : AppPalette.borderLight;
     final highlight =
-        isDark ? AppPalette.borderDark : const Color(0xFFF1F3F9);
+        isDark ? AppPalette.borderDark : const Color(0xFFEFEFEB);
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {

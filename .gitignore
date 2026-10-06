@@ -48,3 +48,10 @@ app.*.map.json
 *.apk
 *.aab
 *.ipa
+
+# Build-time secrets (flutter run --dart-define-from-file=secrets.json)
+secrets.json
+
+# Cloudflare Worker local state and dev secrets
+.wrangler/
+.dev.vars

@@ -1,311 +1,248 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../data/models/saved_route.dart';
+import '../../data/models/shop.dart';
+import '../../routing/conditions.dart';
+import '../../routing/network.dart';
+import '../../routing/router.dart';
 import '../../shared/providers/providers.dart';
-import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/brand_logo.dart';
 import '../../shared/widgets/screen_header.dart';
+import '../shop_detail/shop_detail_sheet.dart';
 
-class SavedRoutesScreen extends ConsumerWidget {
+/// Saved routes and saved places.
+class SavedRoutesScreen extends ConsumerStatefulWidget {
   const SavedRoutesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final savedRoutes = ref.watch(savedRoutesProvider);
-    final buildingsAsync = ref.watch(buildingsProvider);
+  ConsumerState<SavedRoutesScreen> createState() => _SavedRoutesScreenState();
+}
+
+class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
+  bool _places = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final routes = ref.watch(savedRoutesProvider);
+    final placeIds = ref.watch(savedPlacesProvider);
+    final shops = ref.watch(shopsProvider).valueOrNull ?? const <Shop>[];
+    final places = shops.where((s) => placeIds.contains(s.id)).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final bMap =
+        ref.watch(networkProvider).valueOrNull?.buildingById ?? const <String, NetBuilding>{};
 
     return Scaffold(
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        bottom: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.bottomScrollClearance),
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: ScreenHeader(
-                'Saved Routes',
-                '${savedRoutes.length} route${savedRoutes.length != 1 ? 's' : ''} saved',
+            const ScreenHeader('Saved', 'Your routes and places'),
+            const SizedBox(height: AppSpacing.lg),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<bool>(
+                showSelectedIcon: false,
+                segments: [
+                  ButtonSegment(value: false, label: Text('Routes (${routes.length})')),
+                  ButtonSegment(value: true, label: Text('Places (${places.length})')),
+                ],
+                selected: {_places},
+                onSelectionChanged: (v) => setState(() => _places = v.first),
               ),
             ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: savedRoutes.isEmpty
-                  ? _buildEmptyState(context)
-                  : buildingsAsync.when(
-                      loading: () =>
-                          const Center(child: CircularProgressIndicator()),
-                      error: (e, _) => Center(child: Text('Error: $e')),
-                      data: (buildings) {
-                        final buildingMap = {
-                          for (final b in buildings) b.id: b
-                        };
-                        return ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(
-                              16, 0, 16, AppSpacing.bottomScrollClearance),
-                          itemCount: savedRoutes.length,
-                          itemBuilder: (context, index) {
-                            final route = savedRoutes[index];
-                            final fromName =
-                                buildingMap[route.fromId]?.name ?? route.fromId;
-                            final toName =
-                                buildingMap[route.toId]?.name ?? route.toId;
-                            return Dismissible(
-                              key: Key(route.id),
-                              direction: DismissDirection.endToStart,
-                              background: Container(
-                                alignment: Alignment.centerRight,
-                                padding: const EdgeInsets.only(right: 22),
-                                margin: const EdgeInsets.only(bottom: 12),
-                                decoration: BoxDecoration(
-                                  color: AppPalette.destination,
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                                child: const Icon(Icons.delete_rounded,
-                                    color: Colors.white),
-                              ),
-                              onDismissed: (_) {
-                                ref
-                                    .read(savedRoutesProvider.notifier)
-                                    .remove(route.id);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Text('Route deleted'),
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(10)),
-                                  ),
-                                );
-                              },
-                              child: _buildRouteCard(context, ref, route,
-                                      fromName, toName)
-                                  .animate()
-                                  .fadeIn(
-                                      duration: 300.ms,
-                                      delay: (50 * index).ms)
-                                  .slideX(
-                                      begin: 0.1,
-                                      end: 0,
-                                      duration: 300.ms,
-                                      delay: (50 * index).ms),
-                            );
-                          },
-                        );
-                      },
-                    ),
-            ),
+            const SizedBox(height: AppSpacing.lg),
+            if (!_places && routes.isEmpty)
+              _empty(context, Icons.bookmark_border_rounded, 'No saved routes yet',
+                  'Plan a route and tap Save to keep it here.', 'Plan a route', '/route'),
+            if (_places && places.isEmpty)
+              _empty(
+                  context,
+                  Icons.storefront_outlined,
+                  'No saved places yet',
+                  'Tap the bookmark on any shop or service to save it.',
+                  'Browse the directory',
+                  '/directory'),
+            if (!_places)
+              for (final r in routes) _routeTile(context, r, bMap),
+            if (_places)
+              for (final s in places)
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+                  leading: BrandLogo(shop: s, size: 44),
+                  title: Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(bMap[s.buildingId]?.name ?? s.category.label,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  trailing: IconButton(
+                    tooltip: 'Remove from saved',
+                    icon:
+                        Icon(Icons.bookmark_rounded, color: Theme.of(context).colorScheme.primary),
+                    onPressed: () => ref.read(savedPlacesProvider.notifier).toggle(s.id),
+                  ),
+                  onTap: () => showShopDetail(context, s),
+                ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _empty(
+      BuildContext context, IconData icon, String title, String body, String cta, String path) {
     final theme = Theme.of(context);
-    return Center(
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xxxl),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(26),
-            decoration: BoxDecoration(
-              color: AppPalette.brand,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: AppPalette.brand.withValues(alpha: 0.3),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: const Icon(Icons.bookmark_rounded,
-                size: 48, color: Colors.white),
-          ),
-          const SizedBox(height: 20),
-          Text('No saved routes yet', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(
-            'Plan a route and tap "Save" to\nadd it here for quick access',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall,
-          ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: () => GoRouter.of(context).go('/route'),
-            icon: const Icon(Icons.route, size: 18),
-            label: const Text('Plan a Route'),
-            style: FilledButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-        ],
-      ),
-    ).animate().fadeIn(duration: 500.ms).scale(begin: const Offset(0.95, 0.95), end: const Offset(1, 1), duration: 500.ms);
-  }
-
-  Widget _buildRouteCard(BuildContext context, WidgetRef ref,
-      SavedRoute route, String fromName, String toName) {
-    final theme = Theme.of(context);
-    final modeIcon = _modeIcon(route.routeType);
-    final modeColor = _modeColor(route.routeType);
-    final modeLabel = route.routeType[0].toUpperCase() +
-        route.routeType.substring(1);
-
-    return GlassCard(
-      margin: const EdgeInsets.only(bottom: 12),
-      accent: modeColor,
-      onTap: () => _goRoute(context, ref, route),
-      onLongPress: () => _showRenameDialog(context, ref, route),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: modeColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(modeIcon, color: modeColor, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(route.name,
-                          style: theme.textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                    if (route.isRoutine)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: AppPalette.warning.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color:
-                                  AppPalette.warning.withValues(alpha: 0.25)),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.bolt_rounded,
-                                size: 11, color: AppPalette.warning),
-                            SizedBox(width: 2),
-                            Text('Routine',
-                                style: TextStyle(
-                                    fontSize: 10,
-                                    color: AppPalette.warning,
-                                    fontWeight: FontWeight.w700)),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text('$fromName → $toName',
-                    style: theme.textTheme.bodySmall,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 2),
-                Text(modeLabel, style: theme.textTheme.labelSmall),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: () {
-              HapticFeedback.mediumImpact();
-              _goRoute(context, ref, route);
-            },
-            icon: const Icon(Icons.navigation_rounded, size: 15),
-            label: const Text('Go', style: TextStyle(fontSize: 13)),
-            style: FilledButton.styleFrom(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              minimumSize: Size.zero,
-            ),
-          ),
+          Icon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(height: AppSpacing.md),
+          Text(title, style: theme.textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.xs),
+          Text(body,
+              textAlign: TextAlign.center,
+              style:
+                  theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: AppSpacing.lg),
+          OutlinedButton(onPressed: () => context.go(path), child: Text(cta)),
         ],
       ),
     );
   }
 
-  Color _modeColor(String mode) {
-    switch (mode) {
-      case 'accessible':
-        return AppPalette.origin;
-      case 'explorer':
-        return AppPalette.skywalk;
-      default:
-        return AppPalette.brand;
-    }
+  Widget _routeTile(BuildContext context, SavedRoute r, Map<String, NetBuilding> bMap) {
+    final theme = Theme.of(context);
+    final from = bMap[r.fromId];
+    final to = bMap[r.toId];
+    final profile = profileFromName(r.routeType);
+    return Dismissible(
+      key: Key(r.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: AppSpacing.xl),
+        decoration: BoxDecoration(
+          color: AppPalette.danger,
+          borderRadius: AppRadii.rControl,
+        ),
+        child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+      ),
+      onDismissed: (_) => _delete(context, r),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+        leading: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(r.isRoutine ? Icons.bolt_rounded : Icons.route_rounded,
+              color: theme.colorScheme.onPrimaryContainer),
+        ),
+        title: Text(r.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          '${profile.label}${r.isRoutine ? ' · on the map' : ''}'
+          '${from == null || to == null ? ' · a building is no longer on the network' : ''}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton.filledTonal(
+              tooltip: 'Start',
+              icon: const Icon(Icons.navigation_rounded),
+              onPressed: from == null || to == null ? null : () => _start(context, r),
+            ),
+            // Rename and delete, also reachable by long-press and swipe.
+            PopupMenuButton<String>(
+              tooltip: 'More',
+              onSelected: (v) => v == 'rename' ? _rename(context, r) : _delete(context, r),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'rename', child: Text('Rename')),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
+          ],
+        ),
+        onTap: from == null || to == null
+            ? null
+            : () {
+                ref.read(routeFromProvider.notifier).state = from;
+                ref.read(routeToProvider.notifier).state = to;
+                context.go('/route');
+              },
+        onLongPress: () => _rename(context, r),
+      ),
+    );
   }
 
-  void _goRoute(
-      BuildContext context, WidgetRef ref, SavedRoute route) async {
-    final navigator = GoRouter.of(context);
+  void _delete(BuildContext context, SavedRoute r) {
+    ref.read(savedRoutesProvider.notifier).remove(r.id);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        persist: false, // auto-dismiss despite the action
+        content: const Text('Route deleted'),
+        action: SnackBarAction(
+            label: 'Undo', onPressed: () => ref.read(savedRoutesProvider.notifier).add(r)),
+      ));
+  }
+
+  /// Starts live navigation, or previews the route when the +15 is closed.
+  Future<void> _start(BuildContext context, SavedRoute r) async {
+    HapticFeedback.mediumImpact();
+    final go = GoRouter.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    final pathfinder = await ref.read(pathfinderProvider.future);
-    final result = pathfinder.findRoute(route.fromId, route.toId,
-        mode: route.routeType);
-    if (result != null) {
-      ref.read(activeRouteProvider.notifier).state = result.path;
-      ref.read(activeRouteDistanceProvider.notifier).state =
-          result.totalDistance;
-      ref.read(navigationSessionProvider.notifier).start(
-            destinationId: route.toId,
-            mode: route.routeType,
-            routePath: result.path,
-            totalDistanceM: result.totalDistance,
-          );
-      navigator.go('/map');
-    } else {
+    final router = await ref.read(routerProvider.future);
+    if (!mounted) return;
+    final result = router.route(RouteOrigin.building(r.fromId), r.toId,
+        profile: profileFromName(r.routeType), at: calgaryNow());
+    // A route only blocked by a closure is still worth previewing.
+    final route = result.route ?? result.viaClosed;
+    if (route == null) {
       messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-          content: Text('Route unavailable — buildings may be disconnected.'),
-          behavior: SnackBarBehavior.floating,
-        ));
+          .showSnackBar(SnackBar(content: Text(result.unavailableReason ?? 'Route unavailable.')));
+      return;
     }
+    ref.read(activeRouteProvider.notifier).state = route;
+    if (route.previewOnly) {
+      ref.read(navigationSessionProvider.notifier).stop();
+      messenger.showSnackBar(SnackBar(
+          content: Text(route.opensAt != null
+              ? 'The +15 is closed now. Showing the route so you can plan ahead.'
+              : 'This route goes through a closed bridge. Preview only.')));
+    } else {
+      ref.read(navigationSessionProvider.notifier).start(route: route);
+    }
+    go.go('/map');
   }
 
-  void _showRenameDialog(
-      BuildContext context, WidgetRef ref, SavedRoute route) {
-    final controller = TextEditingController(text: route.name);
+  void _rename(BuildContext context, SavedRoute r) {
+    final controller = TextEditingController(text: r.name);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Rename Route'),
+        title: const Text('Rename route'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(labelText: 'Route Name'),
+          decoration: const InputDecoration(labelText: 'Name'),
           autofocus: true,
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () {
-              ref.read(savedRoutesProvider.notifier).update(
-                    route.copyWith(name: controller.text),
-                  );
+              if (controller.text.trim().isNotEmpty) {
+                ref
+                    .read(savedRoutesProvider.notifier)
+                    .update(r.copyWith(name: controller.text.trim()));
+              }
               Navigator.pop(ctx);
             },
             child: const Text('Save'),
@@ -313,16 +250,5 @@ class SavedRoutesScreen extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  IconData _modeIcon(String mode) {
-    switch (mode) {
-      case 'accessible':
-        return Icons.accessible;
-      case 'explorer':
-        return Icons.explore;
-      default:
-        return Icons.speed;
-    }
   }
 }

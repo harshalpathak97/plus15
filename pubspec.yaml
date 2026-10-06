@@ -1,5 +1,5 @@
 name: plus15_navigator
-description: "A new Flutter project."
+description: "Navigate Calgary's +15 skywalk network."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -37,13 +37,13 @@ dependencies:
   flutter_riverpod: ^2.6.1
   go_router: ^16.1.0
   hive_flutter: ^1.1.0
-  google_fonts: ^6.3.0
   flutter_animate: ^4.5.2
   flutter_map: ^8.2.2
   latlong2: ^0.9.1
   geolocator: ^13.0.2
-  permission_handler: ^11.3.1
   url_launcher: ^6.3.0
+  collection: ^1.19.0
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:
@@ -61,11 +61,22 @@ dev_dependencies:
 # following page: https://dart.dev/tools/pub/pubspec
 
 flutter_launcher_icons:
+  image_path: assets/icons/plus15_logo.png
   android: true
   ios: true
-  image_path: assets/icons/plus15_logo.png
+  remove_alpha_ios: true
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: assets/icons/plus15_logo.png
+  adaptive_icon_foreground: assets/icons/plus15_logo_foreground.png
+  adaptive_icon_monochrome: assets/icons/plus15_logo_foreground.png
+  web:
+    generate: true
+    background_color: "#FFFFFF"
+    theme_color: "#FFFFFF"
+  macos:
+    generate: true
+  windows:
+    generate: true
+    icon_size: 256
 
 # The following section is specific to Flutter packages.
 flutter:
@@ -76,12 +87,23 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/data/buildings.json
-    - assets/data/bridges.json
+    - assets/data/network.json
+    - assets/data/closures.json
     - assets/data/shops.json
-    - assets/data/entry_points.json
-    - assets/data/bridge_geometry.json
-    - assets/data/walkway_footprints.json
+    - assets/icons/plus15_mark.png
+    - assets/logos/
+
+  # Bundled so text renders correctly offline and on first launch.
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-400.ttf
+        - asset: assets/fonts/Inter-500.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-600.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-700.ttf
+          weight: 700
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

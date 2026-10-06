@@ -1,0 +1,18 @@
+name = "plus15-ai"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+# The key is a secret, never in this file: `wrangler secret put NVIDIA_API_KEY`.
+# Local dev reads it from a gitignored .dev.vars (NVIDIA_API_KEY=nvapi-...).
+
+# Per-IP request cap (Cloudflare's built-in rate limiter; period is 10 or 60 s).
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1501"
+simple = { limit = 20, period = 60 }
+
+# Global daily budget (see DAILY_CAP in worker.js). Create the namespace with
+# `wrangler kv namespace create USAGE` and paste its id here before deploying.
+# [[kv_namespaces]]
+# binding = "USAGE"
+# id = "<from wrangler kv namespace create USAGE>"

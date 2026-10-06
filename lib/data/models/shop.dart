@@ -62,6 +62,8 @@ class Shop {
   final String phone;
   final String website;
   final String description;
+  /// Bundled brand logo (assets/logos/…), if one is known.
+  final String? logo;
 
   const Shop({
     required this.id,
@@ -72,6 +74,7 @@ class Shop {
     this.phone = '',
     this.website = '',
     this.description = '',
+    this.logo,
   });
 
   factory Shop.fromJson(Map<String, dynamic> json) => Shop(
@@ -86,6 +89,7 @@ class Shop {
         phone: json['phone'] as String? ?? '',
         website: json['website'] as String? ?? '',
         description: json['description'] as String? ?? '',
+        logo: json['logo'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -97,5 +101,6 @@ class Shop {
         'phone': phone,
         'website': website,
         'description': description,
+        if (logo != null) 'logo': logo,
       };
 }

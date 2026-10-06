@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,11 +8,16 @@ import 'package:latlong2/latlong.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
-import '../../data/models/building.dart';
 import '../../data/models/saved_route.dart';
-import '../../data/graph/pathfinder.dart';
+import '../../routing/conditions.dart';
+import '../../routing/network.dart';
+import '../../routing/router.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/widgets/location_prompt.dart';
 import '../../shared/widgets/screen_header.dart';
+import '../ai/widgets/ai_concierge_sheet.dart';
+import '../ai/services/kimi_ai_service.dart' show aiConfigured;
+import '../transit/street_directions.dart';
 import 'widgets/route_option_card.dart';
 import 'widgets/step_list.dart';
 
@@ -22,9 +28,63 @@ class RouteScreen extends ConsumerStatefulWidget {
   ConsumerState<RouteScreen> createState() => _RouteScreenState();
 }
 
+/// One distinct route and the profiles that produced it.
+class _Option {
+  final PlannedRoute route;
+  final List<RouteProfile> profiles;
+  _Option(this.route, this.profiles);
+  String get title => route.throughClosures.isNotEmpty
+      ? 'If the closed bridge reopens'
+      : profiles.length == RouteProfile.values.length
+          ? 'Recommended'
+          : profiles.map((p) => p.label).join(' · ');
+}
+
 class _RouteScreenState extends ConsumerState<RouteScreen> {
-  List<RouteResult>? _results;
+  List<_Option>? _results;
+  List<String> _unavailable = const [];
   int _selectedIndex = 0;
+  bool _busy = false;
+  bool _locating = false;
+
+  /// Set when the user chose "Use my location" as the start.
+  LatLng? _fromLocation;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Start from where you are when we already know it (no prompt).
+      if (ref.read(routeFromMyLocationProvider) ||
+          ref.read(routeFromProvider) == null &&
+              ref.read(locationStreamProvider).valueOrNull != null) {
+        _useMyLocationAsStart();
+      } else {
+        _recalculate();
+      }
+    });
+  }
+
+  /// Start from a building (or nothing): no longer from the phone's location.
+  void _clearLocationStart() {
+    _fromLocation = null;
+    ref.read(routeFromMyLocationProvider.notifier).state = false;
+  }
+
+  bool get _ready =>
+      (ref.read(routeFromProvider) != null || _fromLocation != null) &&
+      ref.read(routeToProvider) != null;
+
+  /// Routes update as soon as both ends are set (from here, the map, search
+  /// or Ask AI).
+  void _recalculate() {
+    if (!mounted) return;
+    if (_ready) {
+      _calculateRoutes(ref.read(routeFromProvider), ref.read(routeToProvider)!);
+    } else if (_results != null) {
+      setState(() => _results = null);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,173 +93,111 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     final from = ref.watch(routeFromProvider);
     final to = ref.watch(routeToProvider);
     final walkingSpeed = ref.watch(walkingSpeedProvider);
+    ref.listen(routeFromProvider, (_, __) => _recalculate());
+    ref.listen(routeToProvider, (_, __) => _recalculate());
+    ref.listen(accessibilityModeProvider, (_, __) => _recalculate());
+    ref.listen(routeFromMyLocationProvider, (_, mine) {
+      if (mine && _fromLocation == null) _useMyLocationAsStart();
+    });
+
+    final selected = _results == null || _results!.isEmpty ? null : _results![_selectedIndex];
 
     return Scaffold(
       body: SafeArea(
+        bottom: false,
         child: buildingsAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Error: $e')),
+          error: (e, _) => Center(
+            child: TextButton(
+              onPressed: () => ref.invalidate(networkProvider),
+              child: const Text('Couldn’t load the +15 network. Try again'),
+            ),
+          ),
           data: (buildings) => ListView(
             padding: const EdgeInsets.fromLTRB(
-                16, 16, 16, AppSpacing.bottomScrollClearance),
+                AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.bottomScrollClearance),
             children: [
-              const ScreenHeader(
-                  'Navigate', 'Find the best path through the +15 network'),
-              const SizedBox(height: 20),
-              _buildLocationSelector(context, buildings, true, from,
-                      allowUseMyLocation: true)
-                  .animate()
-                  .fadeIn(duration: 400.ms, delay: 150.ms),
-              const SizedBox(height: 10),
-              Center(
-                child: GestureDetector(
-                  onTap: () {
-                    final f = ref.read(routeFromProvider);
-                    final t = ref.read(routeToProvider);
-                    ref.read(routeFromProvider.notifier).state = t;
-                    ref.read(routeToProvider.notifier).state = f;
-                    setState(() => _results = null);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppPalette.brand,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppPalette.brand.withValues(alpha: 0.3),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.swap_vert_rounded,
-                        size: 20, color: Colors.white),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              _buildLocationSelector(context, buildings, false, to)
-                  .animate()
-                  .fadeIn(duration: 400.ms, delay: 200.ms),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: from != null && to != null
-                      ? () => _calculateRoutes(from, to)
-                      : null,
-                  icon: const Icon(Icons.route, size: 18),
-                  label: const Text('Find Routes'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ).animate().fadeIn(duration: 400.ms, delay: 250.ms),
-              if (_results != null && _results!.isNotEmpty) ...[
-                const SizedBox(height: 24),
-                Text('Route Options', style: theme.textTheme.titleLarge)
-                    .animate()
-                    .fadeIn(duration: 300.ms),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 110,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _results!.length,
-                    itemBuilder: (context, index) {
-                      final modes = ['Fastest', 'Accessible', 'Explorer'];
-                      final icons = [
-                        Icons.speed,
-                        Icons.accessible,
-                        Icons.explore
-                      ];
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 10),
-                        child: RouteOptionCard(
-                          title: modes[index],
-                          icon: icons[index],
-                          distance: _results![index].totalDistance,
-                          bridges: _results![index].bridgeCount,
-                          time: AppConstants.estimateWalkTimeMinutes(
-                            _results![index].totalDistance,
-                            speedKmh: walkingSpeed,
-                          ),
-                          isAccessible: _results![index].fullyAccessible,
-                          isSelected: _selectedIndex == index,
-                          onTap: () => setState(() => _selectedIndex = index),
-                        ),
-                      )
-                          .animate()
-                          .fadeIn(duration: 300.ms, delay: (100 * index).ms)
-                          .slideX(
-                              begin: 0.2,
-                              end: 0,
-                              duration: 300.ms,
-                              delay: (100 * index).ms);
-                    },
-                  ),
-                ),
-                const SizedBox(height: 20),
-                StepList(
-                  path: _results![_selectedIndex].path,
-                  buildings: buildings,
-                  bridges: ref.watch(bridgesProvider).value ?? [],
-                ).animate().fadeIn(duration: 300.ms, delay: 200.ms),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: _startNavigation,
-                        icon: const Icon(Icons.navigation, size: 18),
-                        label: const Text('Start'),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _saveRoute,
-                        icon: const Icon(Icons.bookmark_add_outlined, size: 18),
-                        label: const Text('Save'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ).animate().fadeIn(duration: 300.ms, delay: 300.ms),
+              const ScreenHeader('Navigate', 'Indoor routes through Calgary’s +15'),
+              const SizedBox(height: AppSpacing.xl),
+              _endpoints(context, buildings, from, to),
+              if (_busy) ...[
+                const SizedBox(height: AppSpacing.xl),
+                const LinearProgressIndicator(minHeight: 2),
               ],
-              if (_results != null && _results!.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 40),
-                  child: Center(
-                    child: Column(
-                      children: [
-                        Icon(Icons.route,
-                            size: 56, color: theme.textTheme.bodySmall?.color),
-                        const SizedBox(height: 12),
-                        Text('No route found',
-                            style: theme.textTheme.titleMedium),
-                        const SizedBox(height: 4),
-                        Text('These buildings may not be connected',
-                            style: theme.textTheme.bodySmall),
-                      ],
+              if (from == null && _fromLocation == null || to == null) ...[
+                const SizedBox(height: AppSpacing.xxl),
+                _hint(theme),
+              ],
+              if (selected != null) ...[
+                const SizedBox(height: AppSpacing.xl),
+                for (var i = 0; i < _results!.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: RouteOptionCard(
+                      title: _results![i].title,
+                      icon: _results![i].route.throughClosures.isNotEmpty
+                          ? Icons.block_rounded
+                          : _profileIcon(_results![i].profiles.first),
+                      distance: _results![i].route.lengthM,
+                      bridges: _results![i].route.bridgeCount,
+                      time: AppConstants.estimateWalkTimeMinutes(_results![i].route.lengthM,
+                          speedKmh: walkingSpeed),
+                      isAccessible: _results![i].route.stepFree && !_results![i].route.usesStreet,
+                      isSelected: _selectedIndex == i,
+                      previewOnly: _results![i].route.throughClosures.isNotEmpty,
+                      badge: _results![i].route.throughClosures.isNotEmpty
+                          ? 'Preview only · bridge closed now'
+                          : _results![i].route.usesStreet
+                              ? 'Includes an outdoor walk'
+                              : null,
+                      onTap: () => setState(() => _selectedIndex = i),
+                    ),
+                  ).animate().fadeIn(duration: 220.ms, delay: (60 * i).ms),
+                for (final u in _unavailable)
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.xs),
+                    child: Text(u, style: theme.textTheme.bodySmall),
+                  ),
+                if (selected.route.previewOnly) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  PreviewBanner(route: selected.route),
+                ],
+                const SizedBox(height: AppSpacing.lg),
+                _actions(selected.route),
+                if (!selected.route.previewOnly || selected.route.opensAt != null) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  WalkToEntranceCard(route: selected.route),
+                ],
+                const SizedBox(height: AppSpacing.xl),
+                RouteNotices(route: selected.route),
+                const SizedBox(height: AppSpacing.lg),
+                StepList(route: selected.route, showDebug: ref.watch(debugGraphProvider)),
+                if (ref.watch(debugGraphProvider)) RouteExplanation(route: selected.route),
+                if (aiConfigured) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => showAiConcierge(context,
+                          initialPrompt: 'Tell me about the +15 route from '
+                              '${from?.name ?? 'my location'} to ${to!.name}. '
+                              'Anything to grab on the way?'),
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                      label: const Text('Ask +15 about this route'),
                     ),
                   ),
-                ).animate().fadeIn(duration: 300.ms),
+                ],
+                if (to != null) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Text('Not in the +15 yet?', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text('Get to ${from?.name ?? to.name} by transit, on foot or by car.',
+                      style: theme.textTheme.bodySmall),
+                  const SizedBox(height: AppSpacing.sm),
+                  StreetDirectionsRow(building: from ?? to),
+                ],
+              ],
+              if (_results != null && _results!.isEmpty) _noRoute(theme),
             ],
           ),
         ),
@@ -207,350 +205,439 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     );
   }
 
-  Widget _buildLocationSelector(
-    BuildContext context,
-    List<Building> buildings,
-    bool isFrom,
-    Building? selected, {
-    bool allowUseMyLocation = false,
+  Widget _hint(ThemeData theme) => Column(
+        children: [
+          Icon(Icons.alt_route_rounded, size: 40, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(height: AppSpacing.md),
+          Text('Choose where you’re starting and where you’re going.',
+              textAlign: TextAlign.center,
+              style:
+                  theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ],
+      );
+
+  Widget _noRoute(ThemeData theme) {
+    final to = ref.read(routeToProvider);
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xxl),
+      child: Column(
+        children: [
+          Icon(Icons.wrong_location_outlined, size: 40, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(height: AppSpacing.md),
+          Text('No route found', style: theme.textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.xs),
+          for (final u in _unavailable)
+            Text(u,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          if (to != null && _fromLocation != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            Text('Get to ${to.name}', style: theme.textTheme.titleSmall),
+            const SizedBox(height: AppSpacing.sm),
+            StreetDirectionsRow(building: to),
+          ],
+        ],
+      ),
+    ).animate().fadeIn(duration: 250.ms);
+  }
+
+  Widget _actions(PlannedRoute route) {
+    final start = route.previewOnly
+        ? FilledButton.icon(
+            onPressed: _previewOnMap,
+            icon: const Icon(Icons.map_outlined),
+            label: const Text('Preview on map'),
+          )
+        : FilledButton.icon(
+            onPressed: _startNavigation,
+            icon: const Icon(Icons.navigation_rounded),
+            label: const Text('Start'),
+          );
+    return Row(
+      children: [
+        Expanded(flex: 3, child: start),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          flex: 2,
+          child: OutlinedButton.icon(
+            onPressed: route.throughClosures.isEmpty ? _saveRoute : null,
+            icon: const Icon(Icons.bookmark_add_outlined),
+            label: const Text('Save'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// From / To in one card, with swap — the familiar maps-app pattern.
+  Widget _endpoints(
+      BuildContext context, List<NetBuilding> buildings, NetBuilding? from, NetBuilding? to) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppRadii.rCard,
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              children: [
+                _endpointRow(
+                  context,
+                  icon: Icons.trip_origin_rounded,
+                  color: AppPalette.origin,
+                  label: _fromLocation != null ? 'My location' : from?.name,
+                  placeholder: 'Choose start',
+                  onTap: () => _showBuildingPicker(context, buildings, true),
+                  trailing: IconButton(
+                    tooltip: 'Start from my location',
+                    icon: _locating
+                        ? const SizedBox.square(
+                            dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Icon(Icons.my_location_rounded,
+                            color:
+                                _fromLocation != null ? scheme.primary : scheme.onSurfaceVariant),
+                    onPressed: _useMyLocationAsStart,
+                  ),
+                ),
+                Divider(height: 1, indent: 52, color: scheme.outlineVariant),
+                _endpointRow(
+                  context,
+                  icon: Icons.location_on_rounded,
+                  color: AppPalette.destination,
+                  label: to?.name,
+                  placeholder: 'Choose destination',
+                  onTap: () => _showBuildingPicker(context, buildings, false),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Swap start and destination',
+            icon: const Icon(Icons.swap_vert_rounded),
+            // "My location" can't be a destination.
+            onPressed: _fromLocation != null
+                ? null
+                : () {
+                    HapticFeedback.selectionClick();
+                    final f = ref.read(routeFromProvider);
+                    final t = ref.read(routeToProvider);
+                    setState(_clearLocationStart);
+                    ref.read(routeFromProvider.notifier).state = t;
+                    ref.read(routeToProvider.notifier).state = f;
+                  },
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+    );
+  }
+
+  Widget _endpointRow(
+    BuildContext context, {
+    required IconData icon,
+    required Color color,
+    required String? label,
+    required String placeholder,
+    required VoidCallback onTap,
+    Widget? trailing,
   }) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final pinColor = isFrom ? AppPalette.origin : AppPalette.destination;
     return InkWell(
-      onTap: () => _showBuildingPicker(context, buildings, isFrom),
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark ? AppPalette.cardDark : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-              color: isDark ? AppPalette.borderDark : AppPalette.borderLight),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.05),
-              blurRadius: 14,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: pinColor.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                isFrom ? Icons.trip_origin : Icons.location_on,
-                size: 16,
-                color: pinColor,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                selected?.name ??
-                    (isFrom ? 'Choose starting point' : 'Choose destination'),
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  color: selected != null
-                      ? null
-                      : theme.textTheme.bodySmall?.color,
-                ),
-              ),
-            ),
-            if (allowUseMyLocation)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: InkWell(
-                  onTap: () => _useMyLocationAsStart(buildings),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'Use my location',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+      onTap: onTap,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 60),
+        child: Padding(
+          padding:
+              EdgeInsets.only(left: AppSpacing.lg, right: trailing == null ? AppSpacing.lg : 0),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: Text(
+                  label ?? placeholder,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: label == null ? theme.colorScheme.onSurfaceVariant : null,
+                    fontWeight: label == null ? null : FontWeight.w600,
                   ),
                 ),
               ),
-            Icon(Icons.chevron_right,
-                size: 20, color: theme.textTheme.bodySmall?.color),
-          ],
+              if (trailing != null) trailing,
+            ],
+          ),
         ),
       ),
     );
   }
 
-  void _showBuildingPicker(
-      BuildContext context, List<Building> buildings, bool isFrom) {
+  void _showBuildingPicker(BuildContext context, List<NetBuilding> buildings, bool isFrom) {
     final searchController = TextEditingController();
+    final sorted = [...buildings.where((b) => b.isRoutable)]
+      ..sort((a, b) => a.name.compareTo(b.name));
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            final query = searchController.text.toLowerCase();
-            final filtered = buildings
-                .where((b) => b.name.toLowerCase().contains(query))
-                .toList();
-            return DraggableScrollableSheet(
-              initialChildSize: 0.7,
-              maxChildSize: 0.9,
-              minChildSize: 0.4,
-              expand: false,
-              builder: (context, controller) {
-                return Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).scaffoldBackgroundColor,
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(20)),
+      useRootNavigator: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          final query = searchController.text.toLowerCase();
+          // Former names (e.g. "Shell Centre" → 400 4th) match too.
+          int rank(NetBuilding b) {
+            final n = b.name.toLowerCase();
+            if (n == query || n == 'the $query') return 0;
+            if (n.startsWith(query)) return 1;
+            if (n.split(' ').any((w) => w.startsWith(query))) return 2;
+            return 3;
+          }
+
+          final filtered = sorted
+              .where((b) =>
+                  b.name.toLowerCase().contains(query) ||
+                  b.aliases.any((a) => a.toLowerCase().contains(query)))
+              .toList();
+          if (query.isNotEmpty) mergeSort(filtered, compare: (a, b) => rank(a) - rank(b));
+          return DraggableScrollableSheet(
+            initialChildSize: 0.75,
+            maxChildSize: 0.92,
+            minChildSize: 0.4,
+            expand: false,
+            builder: (context, controller) => Column(
+              children: [
+                Padding(
+                  padding:
+                      const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
+                  child: TextField(
+                    controller: searchController,
+                    onChanged: (_) => setModalState(() {}),
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: isFrom ? 'Start from…' : 'Where to?',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                    ),
                   ),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 12),
-                      Container(
-                        width: 44,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: TextField(
-                          controller: searchController,
-                          onChanged: (_) => setModalState(() {}),
-                          decoration: const InputDecoration(
-                            hintText: 'Search buildings...',
-                            prefixIcon: Icon(Icons.search, size: 20),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    controller: controller,
+                    itemCount: filtered.length,
+                    itemBuilder: (_, i) {
+                      final b = filtered[i];
+                      final tColor = AppPalette.typeColor(b.type);
+                      return ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: tColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          autofocus: true,
+                          child: Icon(_typeIcon(b.type), size: 20, color: tColor),
                         ),
-                      ),
-                      Expanded(
-                        child: ListView.builder(
-                          controller: controller,
-                          itemCount: filtered.length,
-                          itemBuilder: (_, i) {
-                            final b = filtered[i];
-                            final tColor = AppPalette.typeColor(b.type);
-                            return ListTile(
-                              leading: Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: tColor.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(11),
-                                ),
-                                child: Icon(_typeIcon(b.type),
-                                    size: 19, color: tColor),
-                              ),
-                              title: Text(b.name,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600)),
-                              subtitle: b.address.isNotEmpty
-                                  ? Text(b.address,
-                                      style: const TextStyle(fontSize: 12))
-                                  : null,
-                              onTap: () {
-                                if (isFrom) {
-                                  ref.read(routeFromProvider.notifier).state =
-                                      b;
-                                } else {
-                                  ref.read(routeToProvider.notifier).state = b;
-                                }
-                                Navigator.pop(context);
-                                if (mounted) setState(() => _results = null);
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                        title: Text(b.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: b.address.isNotEmpty || b.aliases.isNotEmpty
+                            ? Text(
+                                [
+                                  if (b.address.isNotEmpty) b.address,
+                                  if (b.aliases.isNotEmpty) 'Formerly ${b.aliases.join(', ')}',
+                                ].join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis)
+                            : null,
+                        onTap: () {
+                          Navigator.pop(context);
+                          if (isFrom) {
+                            setState(_clearLocationStart);
+                            ref.read(routeFromProvider.notifier).state = b;
+                          } else {
+                            ref.read(routeToProvider.notifier).state = b;
+                          }
+                        },
+                      );
+                    },
                   ),
-                );
-              },
-            );
-          },
-        );
-      },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
-  Future<void> _calculateRoutes(Building from, Building to) async {
-    final pathfinder = await ref.read(pathfinderProvider.future);
-    final results = pathfinder.findAllRoutes(from.id, to.id);
+  Future<void> _calculateRoutes(NetBuilding? from, NetBuilding to) async {
+    setState(() => _busy = true);
+    final router = await ref.read(routerProvider.future);
+    final origin = _fromLocation != null
+        ? RouteOrigin.location(_fromLocation!.latitude, _fromLocation!.longitude)
+        : RouteOrigin.building(from!.id);
+    final now = calgaryNow();
+    final preferred = defaultProfile(ref.read(accessibilityModeProvider));
+    final profiles = [preferred, ...RouteProfile.values.where((p) => p != preferred)];
+    final options = <_Option>[];
+    final unavailable = <String>[];
+    PlannedRoute? viaClosed;
+    for (final p in profiles) {
+      final r = router.route(origin, to.id, profile: p, at: now);
+      if (p == preferred) viaClosed = r.viaClosed;
+      if (!r.ok) {
+        unavailable.add('${p.label}: ${r.unavailableReason}');
+        continue;
+      }
+      final same = options.where((o) => _sameRoute(o.route, r.route!));
+      if (same.isNotEmpty) {
+        same.first.profiles.add(p);
+      } else {
+        options.add(_Option(r.route!, [p]));
+      }
+    }
+    // A view-only route through bridges closed today, for planning.
+    if (viaClosed != null && !options.any((o) => _sameRoute(o.route, viaClosed!))) {
+      options.add(_Option(viaClosed, [preferred]));
+    }
+    if (!mounted) return;
     setState(() {
-      _results = results;
+      _busy = false;
+      _results = options;
+      _unavailable = options.isEmpty ? unavailable.take(1).toList() : unavailable;
       _selectedIndex = 0;
     });
+  }
+
+  static bool _sameRoute(PlannedRoute a, PlannedRoute b) =>
+      a.edgeIds.length == b.edgeIds.length &&
+      [for (var i = 0; i < a.edgeIds.length; i++) a.edgeIds[i] == b.edgeIds[i]].every((x) => x);
+
+  static IconData _profileIcon(RouteProfile p) => switch (p) {
+        RouteProfile.fastest => Icons.bolt_rounded,
+        RouteProfile.accessible => Icons.accessible_rounded,
+        RouteProfile.mostlyIndoors => Icons.roofing_rounded,
+      };
+
+  /// Shows a route on the map without starting navigation.
+  void _previewOnMap() {
+    if (_results == null || _results!.isEmpty) return;
+    HapticFeedback.selectionClick();
+    ref.read(navigationSessionProvider.notifier).stop();
+    ref.read(activeRouteProvider.notifier).state = _results![_selectedIndex].route;
+    context.go('/map');
   }
 
   void _startNavigation() {
     if (_results == null || _results!.isEmpty) return;
     HapticFeedback.mediumImpact();
-    final selected = _results![_selectedIndex];
-    final to = ref.read(routeToProvider);
-    final modes = ['fastest', 'accessible', 'explorer'];
-    ref.read(activeRouteProvider.notifier).state = selected.path;
-    ref.read(activeRouteDistanceProvider.notifier).state =
-        selected.totalDistance;
-    if (to != null) {
-      ref.read(navigationSessionProvider.notifier).start(
-            destinationId: to.id,
-            mode: modes[_selectedIndex],
-            routePath: selected.path,
-            totalDistanceM: selected.totalDistance,
-          );
-    }
+    final selected = _results![_selectedIndex].route;
+    ref.read(activeRouteProvider.notifier).state = selected;
+    ref.read(navigationSessionProvider.notifier).start(route: selected);
     context.go('/map');
   }
 
-  Future<void> _useMyLocationAsStart(List<Building> buildings) async {
-    final loc = await ref.read(locationStreamProvider.future);
+  /// Start from the phone's location. Outside the +15 the route first walks
+  /// you outdoors to the best nearby door.
+  Future<void> _useMyLocationAsStart() async {
+    if (_locating) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _locating = true);
+    LatLng? loc;
+    try {
+      if (await ensureLocation(context, ref) && mounted) {
+        ref.read(routeFromMyLocationProvider.notifier).state = true;
+        loc = await ref.read(locationStreamProvider.future).timeout(const Duration(seconds: 12));
+      }
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text("Couldn't find your location. Choose a starting building.")));
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+    if (!mounted) return;
     if (loc == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Location unavailable. Choose a starting building.'),
-        ),
-      );
+      ref.read(routeFromMyLocationProvider.notifier).state = false;
       return;
     }
-
-    Building? nearest;
-    var bestDistance = double.infinity;
-    for (final building in buildings) {
-      final d = _distanceM(loc, LatLng(building.lat, building.lng));
-      if (d < bestDistance) {
-        bestDistance = d;
-        nearest = building;
-      }
-    }
-
-    if (nearest != null) {
-      ref.read(routeFromProvider.notifier).state = nearest;
-      setState(() => _results = null);
-    }
+    setState(() => _fromLocation = loc);
+    ref.read(routeFromProvider.notifier).state = null;
+    _recalculate();
   }
 
-  double _distanceM(LatLng from, LatLng to) {
-    const meter = Distance();
-    return meter(from, to);
-  }
-
-  IconData _typeIcon(String type) {
-    switch (type) {
-      case 'hotel':
-        return Icons.hotel_rounded;
-      case 'retail':
-        return Icons.shopping_bag_rounded;
-      case 'landmark':
-        return Icons.star_rounded;
-      case 'entertainment':
-        return Icons.theaters_rounded;
-      case 'government':
-        return Icons.account_balance_rounded;
-      case 'convention':
-        return Icons.business_rounded;
-      case 'park':
-        return Icons.park_rounded;
-      case 'parking':
-        return Icons.local_parking_rounded;
-      case 'residential':
-        return Icons.apartment_rounded;
-      default:
-        return Icons.location_city_rounded;
-    }
-  }
+  static IconData _typeIcon(String type) => switch (type) {
+        'hotel' => Icons.hotel_rounded,
+        'retail' => Icons.shopping_bag_rounded,
+        'landmark' => Icons.star_rounded,
+        'entertainment' => Icons.theaters_rounded,
+        'government' => Icons.account_balance_rounded,
+        'convention' => Icons.business_rounded,
+        'transit' => Icons.train_rounded,
+        'parking' => Icons.local_parking_rounded,
+        'residential' => Icons.home_rounded,
+        _ => Icons.apartment_rounded,
+      };
 
   void _saveRoute() {
     if (_results == null || _results!.isEmpty) return;
     final from = ref.read(routeFromProvider);
     final to = ref.read(routeToProvider);
-    if (from == null || to == null) return;
-
-    final modes = ['fastest', 'accessible', 'explorer'];
-    final nameController =
-        TextEditingController(text: '${from.name} → ${to.name}');
-    bool isRoutine = false;
+    if (from == null || to == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Choose a starting building to save this route.')));
+      return;
+    }
+    final nameController = TextEditingController(text: '${from.name} → ${to.name}');
+    var isRoutine = false;
 
     showDialog(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(builder: (ctx, setDialogState) {
-          return AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text('Save Route'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Route Name'),
-                ),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  title: const Text('Routine Route'),
-                  subtitle: const Text('Quick launch from map',
-                      style: TextStyle(fontSize: 12)),
-                  value: isRoutine,
-                  onChanged: (v) => setDialogState(() => isRoutine = v),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancel'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Save route'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Name'),
               ),
-              FilledButton(
-                onPressed: () {
-                  final now = DateTime.now();
-                  final saved = SavedRoute(
-                    id: '${from.id}_${to.id}_${now.millisecondsSinceEpoch}',
-                    name: nameController.text,
-                    fromId: from.id,
-                    toId: to.id,
-                    routeType: modes[_selectedIndex],
-                    createdAt: now,
-                    isRoutine: isRoutine,
-                  );
-                  ref.read(savedRoutesProvider.notifier).add(saved);
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text('Route saved!'),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
-                  );
-                },
-                child: const Text('Save'),
+              const SizedBox(height: AppSpacing.md),
+              SwitchListTile(
+                title: const Text('Show on the map'),
+                subtitle: const Text('Start it in one tap from Explore'),
+                value: isRoutine,
+                onChanged: (v) => setDialogState(() => isRoutine = v),
+                contentPadding: EdgeInsets.zero,
               ),
             ],
-          );
-        });
-      },
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                final now = calgaryNow();
+                ref.read(savedRoutesProvider.notifier).add(SavedRoute(
+                      id: '${from.id}_${to.id}_${now.millisecondsSinceEpoch}',
+                      name: nameController.text.trim().isEmpty
+                          ? '${from.name} → ${to.name}'
+                          : nameController.text.trim(),
+                      fromId: from.id,
+                      toId: to.id,
+                      routeType: _results![_selectedIndex].profiles.first.name,
+                      createdAt: now,
+                      isRoutine: isRoutine,
+                    ));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('Route saved')));
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

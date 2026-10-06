@@ -1,52 +1,58 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import '../../data/datasources/map_data.dart';
 import '../../data/datasources/local_storage.dart';
-import '../../data/models/building.dart';
-import '../../data/models/bridge.dart';
-import '../../data/models/entry_point.dart';
 import '../../data/models/shop.dart';
 import '../../data/models/saved_route.dart';
 import '../../data/models/walkway_footprint.dart';
-import '../../data/graph/plus15_graph.dart';
-import '../../data/graph/pathfinder.dart';
-import '../../features/map/utils/path_utils.dart';
+import '../../features/map/basemap.dart';
+import '../../routing/conditions.dart';
+import '../../routing/network.dart';
+import '../../routing/router.dart';
 
 final mapDataSourceProvider = Provider((_) => MapDataSource());
 final localStorageProvider = Provider((_) => LocalStorage());
 
-final buildingsProvider = FutureProvider<List<Building>>((ref) {
-  return ref.read(mapDataSourceProvider).loadBuildings();
+/// The routing network (assets/data/network.json): the single source of
+/// truth for buildings, City walkway polygons, nodes and edges.
+final networkProvider = FutureProvider<Plus15Network>((ref) {
+  return ref.read(mapDataSourceProvider).loadNetwork();
 });
 
-final bridgesProvider = FutureProvider<List<Bridge>>((ref) {
-  return ref.read(mapDataSourceProvider).loadBridges();
+final closuresProvider = FutureProvider<ClosureFeed>((ref) {
+  return ref.read(mapDataSourceProvider).loadClosures();
+});
+
+final conditionsProvider = FutureProvider<Conditions>((ref) async {
+  final net = await ref.watch(networkProvider.future);
+  final feed = await ref.watch(closuresProvider.future);
+  return Conditions(net, feed.closures);
+});
+
+final routerProvider = FutureProvider<Plus15Router>((ref) async {
+  final net = await ref.watch(networkProvider.future);
+  return Plus15Router(net, await ref.watch(conditionsProvider.future));
+});
+
+final buildingsProvider = FutureProvider<List<NetBuilding>>((ref) async {
+  return (await ref.watch(networkProvider.future)).buildings;
 });
 
 final shopsProvider = FutureProvider<List<Shop>>((ref) {
   return ref.read(mapDataSourceProvider).loadShops();
 });
 
-final entryPointsProvider = FutureProvider<List<EntryPoint>>((ref) {
-  return ref.read(mapDataSourceProvider).loadEntryPoints();
-});
-
+/// City walkway footprints for the 3D view, from the same network data.
 final walkwayFootprintsProvider =
-    FutureProvider<List<WalkwayFootprint>>((ref) {
-  return ref.read(mapDataSourceProvider).loadWalkwayFootprints();
-});
-
-final graphProvider = FutureProvider<Plus15Graph>((ref) async {
-  final buildings = await ref.watch(buildingsProvider.future);
-  final bridges = await ref.watch(bridgesProvider.future);
-  return Plus15Graph(buildings: buildings, bridges: bridges);
-});
-
-final pathfinderProvider = FutureProvider<Pathfinder>((ref) async {
-  final graph = await ref.watch(graphProvider.future);
-  final shops = await ref.watch(shopsProvider.future);
-  return Pathfinder(graph: graph, shops: shops);
+    FutureProvider<List<WalkwayFootprint>>((ref) async {
+  final net = await ref.watch(networkProvider.future);
+  return [
+    for (final r in net.regions)
+      if (r.excluded == null) WalkwayFootprint.fromRegion(r)
+  ];
 });
 
 final savedRoutesProvider =
@@ -116,22 +122,22 @@ final accessibilityModeProvider =
   (ref) => AccessibilityModeNotifier(ref.read(localStorageProvider)),
 );
 
-final selectedBuildingProvider = StateProvider<Building?>((ref) => null);
+final selectedBuildingProvider = StateProvider<NetBuilding?>((ref) => null);
 
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
 final selectedCategoryProvider = StateProvider<String?>((ref) => null);
 
-final routeFromProvider = StateProvider<Building?>((ref) => null);
-final routeToProvider = StateProvider<Building?>((ref) => null);
-final routeModeProvider = StateProvider<String>((ref) => 'fastest');
+final routeFromProvider = StateProvider<NetBuilding?>((ref) => null);
+/// Start from the phone's location instead of [routeFromProvider].
+final routeFromMyLocationProvider = StateProvider<bool>((ref) => false);
+final routeToProvider = StateProvider<NetBuilding?>((ref) => null);
 
-final activeRouteProvider = StateProvider<List<String>?>((ref) => null);
-final activeRouteDistanceProvider = StateProvider<double>((ref) => 0);
+/// The route being shown/navigated: exactly the graph edges it uses.
+final activeRouteProvider = StateProvider<PlannedRoute?>((ref) => null);
 
 enum NavigationStatus {
   inactive,
-  headingToEntry,
   onCourse,
   rerouting,
   arrived,
@@ -140,58 +146,45 @@ enum NavigationStatus {
 class NavigationSession {
   final bool isActive;
   final String? destinationId;
-  final String mode;
+  final RouteProfile profile;
   final NavigationStatus status;
-  final String? entryPointId;
-  final List<String>? routePath;
   final double totalDistanceM;
   final double remainingDistanceM;
-  final String? nextNodeId;
-  final double confidence;
+  /// Index into the active route's steps of the instruction to follow next.
+  final int stepIndex;
+  /// Distance from the drawn route at the last GPS fix.
+  final double offRouteM;
   final int offRouteStrikes;
 
   const NavigationSession({
     this.isActive = false,
     this.destinationId,
-    this.mode = 'fastest',
+    this.profile = RouteProfile.fastest,
     this.status = NavigationStatus.inactive,
-    this.entryPointId,
-    this.routePath,
     this.totalDistanceM = 0,
     this.remainingDistanceM = 0,
-    this.nextNodeId,
-    this.confidence = 0,
+    this.stepIndex = 0,
+    this.offRouteM = 0,
     this.offRouteStrikes = 0,
   });
 
   NavigationSession copyWith({
-    bool? isActive,
-    String? destinationId,
-    String? mode,
     NavigationStatus? status,
-    String? entryPointId,
-    List<String>? routePath,
     double? totalDistanceM,
     double? remainingDistanceM,
-    String? nextNodeId,
-    double? confidence,
+    int? stepIndex,
+    double? offRouteM,
     int? offRouteStrikes,
-    bool clearEntryPoint = false,
-    bool clearRoute = false,
-    bool clearNextNode = false,
   }) {
     return NavigationSession(
-      isActive: isActive ?? this.isActive,
-      destinationId: destinationId ?? this.destinationId,
-      mode: mode ?? this.mode,
+      isActive: isActive,
+      destinationId: destinationId,
+      profile: profile,
       status: status ?? this.status,
-      entryPointId:
-          clearEntryPoint ? null : (entryPointId ?? this.entryPointId),
-      routePath: clearRoute ? null : (routePath ?? this.routePath),
       totalDistanceM: totalDistanceM ?? this.totalDistanceM,
       remainingDistanceM: remainingDistanceM ?? this.remainingDistanceM,
-      nextNodeId: clearNextNode ? null : (nextNodeId ?? this.nextNodeId),
-      confidence: confidence ?? this.confidence,
+      stepIndex: stepIndex ?? this.stepIndex,
+      offRouteM: offRouteM ?? this.offRouteM,
       offRouteStrikes: offRouteStrikes ?? this.offRouteStrikes,
     );
   }
@@ -200,22 +193,17 @@ class NavigationSession {
 class NavigationSessionNotifier extends StateNotifier<NavigationSession> {
   NavigationSessionNotifier() : super(const NavigationSession());
 
-  void start({
-    required String destinationId,
-    required String mode,
-    required List<String> routePath,
-    required double totalDistanceM,
-  }) {
+  void start({required PlannedRoute route}) {
+    // No hops: start and destination share a concourse, so you're there.
+    final there = route.hops.isEmpty;
     state = NavigationSession(
       isActive: true,
-      destinationId: destinationId,
-      mode: mode,
-      status: NavigationStatus.onCourse,
-      routePath: routePath,
-      totalDistanceM: totalDistanceM,
-      remainingDistanceM: totalDistanceM,
-      confidence: 1,
-      offRouteStrikes: 0,
+      destinationId: route.destinationBuildingId,
+      profile: route.profile,
+      status: there ? NavigationStatus.arrived : NavigationStatus.onCourse,
+      totalDistanceM: route.lengthM,
+      remainingDistanceM: there ? 0 : route.lengthM,
+      stepIndex: there ? route.steps.length - 1 : 0,
     );
   }
 
@@ -233,17 +221,50 @@ final navigationSessionProvider =
   (ref) => NavigationSessionNotifier(),
 );
 
-Future<bool> _hasLocationPermission() async {
-  final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-  if (!serviceEnabled) return false;
+/// A GPS fix with its horizontal accuracy (metres, 68% confidence).
+class LocationFix extends LatLng {
+  final double accuracyM;
+  LocationFix(Position p)
+      : accuracyM = p.accuracy,
+        super(p.latitude, p.longitude);
+}
 
+/// Whether we may read location. Never shows the OS prompt: that only
+/// happens from an explicit tap, via [requestLocationAccess].
+Future<bool> _hasLocationPermission() async {
+  if (!await Geolocator.isLocationServiceEnabled()) return false;
+  final permission = await Geolocator.checkPermission();
+  return permission == LocationPermission.always ||
+      permission == LocationPermission.whileInUse;
+}
+
+/// Why location isn't available, for the "Turn on" prompt.
+enum LocationBlock { none, serviceOff, denied, deniedForever }
+
+/// Asks for location from a user tap. Returns what still blocks it, and
+/// refreshes [locationStreamProvider] when access was granted.
+Future<LocationBlock> requestLocationAccess(WidgetRef ref) async {
+  if (!await Geolocator.isLocationServiceEnabled()) return LocationBlock.serviceOff;
   var permission = await Geolocator.checkPermission();
   if (permission == LocationPermission.denied) {
     permission = await Geolocator.requestPermission();
   }
-  return permission == LocationPermission.always ||
-      permission == LocationPermission.whileInUse;
+  switch (permission) {
+    case LocationPermission.always:
+    case LocationPermission.whileInUse:
+      ref.invalidate(locationStreamProvider);
+      return LocationBlock.none;
+    case LocationPermission.deniedForever:
+      return LocationBlock.deniedForever;
+    default:
+      return LocationBlock.denied;
+  }
 }
+
+/// Opens the right system screen for [block].
+Future<void> openLocationSettingsFor(LocationBlock block) => block == LocationBlock.serviceOff
+    ? Geolocator.openLocationSettings()
+    : Geolocator.openAppSettings();
 
 final locationStreamProvider = StreamProvider<LatLng?>((ref) async* {
   final isNavigationActive =
@@ -264,108 +285,89 @@ final locationStreamProvider = StreamProvider<LatLng?>((ref) async* {
   );
   final settings = isNavigationActive ? activeSettings : passiveSettings;
 
+  // Show the last known spot at once; a fresh fix can take a while indoors.
   try {
-    final initial = await Geolocator.getCurrentPosition(
-      locationSettings: settings,
-    );
-    yield LatLng(initial.latitude, initial.longitude);
-  } catch (_) {
-    yield null;
+    final last = await Geolocator.getLastKnownPosition();
+    if (last != null) yield LocationFix(last);
+  } catch (_) {}
+
+  yield* Geolocator.getPositionStream(locationSettings: settings)
+      .map<LatLng?>(LocationFix.new)
+      .handleError((_) {});
+});
+
+/// The base map style under the +15 overlay (persisted).
+class BasemapNotifier extends StateNotifier<Basemap> {
+  final LocalStorage _storage;
+  BasemapNotifier(this._storage) : super(Basemap.fromName(_storage.getBasemap()));
+
+  Future<void> select(Basemap b) async {
+    state = b;
+    await _storage.setBasemap(b.name);
   }
-
-  yield* Geolocator.getPositionStream(locationSettings: settings).map(
-    (pos) => LatLng(pos.latitude, pos.longitude),
-  );
-});
-
-final userLocationProvider = Provider<AsyncValue<LatLng?>>((ref) {
-  return ref.watch(locationStreamProvider);
-});
-
-final mapZoomProvider = StateProvider<double>((ref) => 15.2);
-
-/// Full resolved point list for every bridge: [fromLatLng, ...waypoints, toLatLng].
-/// Uses bridge_geometry.json overrides first, falls back to grid-inferred L-shape.
-/// Computed once per data load — survives pan/zoom.
-final bridgePathsProvider =
-    FutureProvider<Map<String, List<LatLng>>>((ref) async {
-  final buildings = await ref.watch(buildingsProvider.future);
-  final bridges = await ref.watch(bridgesProvider.future);
-  final overrides =
-      await ref.read(mapDataSourceProvider).loadBridgeGeometry();
-  final bMap = {for (final b in buildings) b.id: b};
-
-  return {
-    for (final br in bridges)
-      br.id: _resolvedBridgePath(br, bMap, overrides),
-  };
-});
-
-List<LatLng> _resolvedBridgePath(
-  Bridge br,
-  Map<String, Building> bMap,
-  Map<String, List<List<double>>> overrides,
-) {
-  final f = bMap[br.fromBuildingId];
-  final t = bMap[br.toBuildingId];
-  if (f == null || t == null) return const [];
-
-  final fromPt = LatLng(f.lat, f.lng);
-  final toPt = LatLng(t.lat, t.lng);
-
-  final override = overrides[br.id];
-  if (override != null && override.isNotEmpty) {
-    return [
-      fromPt,
-      ...override.map((p) => LatLng(p[0], p[1])),
-      toPt,
-    ];
-  }
-
-  final inferred = inferGridWaypoint(fromPt, toPt);
-  return [fromPt, ...inferred, toPt];
 }
 
-/// Smoothed active-route polyline: threads the resolved bridge waypoints
-/// in route order, deduplicates shared building nodes, then applies
-/// Catmull-Rom subdivision. Re-computes only when the route changes.
-final smoothedRouteProvider = Provider<List<LatLng>>((ref) {
-  final route = ref.watch(activeRouteProvider);
-  if (route == null || route.length < 2) return const [];
+final basemapProvider = StateNotifierProvider<BasemapNotifier, Basemap>(
+  (ref) => BasemapNotifier(ref.read(localStorageProvider)),
+);
 
-  final paths = ref.watch(bridgePathsProvider).valueOrNull;
-  final graph = ref.watch(graphProvider).valueOrNull;
-  if (graph == null) return const [];
-  final bMap = graph.buildingMap;
+/// Shows the routing graph (nodes, edges, sources, confidence) on the map.
+class DebugGraphNotifier extends StateNotifier<bool> {
+  final LocalStorage _storage;
+  DebugGraphNotifier(this._storage) : super(kDebugMode && _storage.getDebugGraph());
 
-  final pts = <LatLng>[];
-  for (var i = 0; i < route.length - 1; i++) {
-    final fromId = route[i];
-    final toId = route[i + 1];
-    final fb = bMap[fromId];
-    final tb = bMap[toId];
-    if (fb == null || tb == null) continue;
-
-    final bridge = graph.getBridge(fromId, toId);
-    final segment = (bridge != null && paths != null)
-        ? paths[bridge.id]
-        : null;
-
-    if (segment != null && segment.isNotEmpty) {
-      // Ensure the segment runs from→to (may be stored in either direction).
-      final forward = segment.first.latitude == fb.lat &&
-          segment.first.longitude == fb.lng;
-      final ordered = forward ? segment : segment.reversed.toList();
-      if (pts.isEmpty) {
-        pts.addAll(ordered);
-      } else {
-        pts.addAll(ordered.skip(1));
-      }
-    } else {
-      if (pts.isEmpty) pts.add(LatLng(fb.lat, fb.lng));
-      pts.add(LatLng(tb.lat, tb.lng));
-    }
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    await _storage.setDebugGraph(value);
   }
+}
 
-  return catmullRomSmooth(pts);
-});
+final debugGraphProvider = StateNotifierProvider<DebugGraphNotifier, bool>(
+  (ref) => DebugGraphNotifier(ref.read(localStorageProvider)),
+);
+
+/// Profile to plan with by default: Accessible when the user asked for
+/// step-free routes.
+RouteProfile defaultProfile(bool accessibilityMode) =>
+    accessibilityMode ? RouteProfile.accessible : RouteProfile.fastest;
+
+/// Saved routes store the old mode names; map them onto today's profiles.
+RouteProfile profileFromName(String name) => switch (name) {
+      'accessible' => RouteProfile.accessible,
+      'mostlyIndoors' => RouteProfile.mostlyIndoors,
+      _ => RouteProfile.fastest, // 'fastest' and the retired 'explorer'
+    };
+
+/// Light by default; dark only when the user turns it on in Settings.
+class ThemeModeNotifier extends StateNotifier<ThemeMode> {
+  final LocalStorage _storage;
+  ThemeModeNotifier(this._storage)
+      : super(_storage.getThemeMode() == 'dark' ? ThemeMode.dark : ThemeMode.light);
+
+  Future<void> setDark(bool dark) async {
+    state = dark ? ThemeMode.dark : ThemeMode.light;
+    await _storage.setThemeMode(dark ? 'dark' : 'light');
+  }
+}
+
+final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>(
+  (ref) => ThemeModeNotifier(ref.read(localStorageProvider)),
+);
+
+/// Saved places (shop ids), persisted.
+class SavedPlacesNotifier extends StateNotifier<Set<String>> {
+  final LocalStorage _storage;
+  SavedPlacesNotifier(this._storage) : super(_storage.getSavedPlaces());
+
+  bool isSaved(String id) => state.contains(id);
+
+  Future<void> toggle(String id) async {
+    final saved = !state.contains(id);
+    state = saved ? {...state, id} : ({...state}..remove(id));
+    await _storage.setPlaceSaved(id, saved);
+  }
+}
+
+final savedPlacesProvider = StateNotifierProvider<SavedPlacesNotifier, Set<String>>(
+  (ref) => SavedPlacesNotifier(ref.read(localStorageProvider)),
+);

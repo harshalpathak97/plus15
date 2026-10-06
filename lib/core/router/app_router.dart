@@ -1,9 +1,8 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../theme/app_palette.dart';
-import '../theme/app_spacing.dart';
+import '../../shared/providers/providers.dart';
 import '../../features/map/map_screen.dart';
 import '../../features/search/search_screen.dart';
 import '../../features/route_planner/route_screen.dart';
@@ -128,147 +127,59 @@ const _navItems = [
       'Saved'),
 ];
 
-class ScaffoldWithNav extends StatelessWidget {
+class ScaffoldWithNav extends ConsumerWidget {
   final StatefulNavigationShell shell;
 
   const ScaffoldWithNav({super.key, required this.shell});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = _navItems.indexWhere((i) => i.isSelected(shell.currentIndex));
+    final onMap = shell.currentIndex == _Branch.explore;
+    final building = ref.watch(selectedBuildingProvider);
+    // A previewed route closes with back; live navigation keeps running.
+    final preview = ref.watch(activeRouteProvider) != null &&
+        !ref.watch(navigationSessionProvider.select((s) => s.isActive));
+    // Android back: other tabs return to the map, the map first closes what
+    // is open on it, and only then does the app close.
+    return PopScope(
+      canPop: onMap && building == null && !preview,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (!onMap) {
+          shell.goBranch(_Branch.explore);
+        } else if (building != null) {
+          ref.read(selectedBuildingProvider.notifier).state = null;
+        } else {
+          ref.read(activeRouteProvider.notifier).state = null;
+        }
+      },
+      child: _scaffold(context, selected),
+    );
+  }
+
+  Widget _scaffold(BuildContext context, int selected) {
     return Scaffold(
-      extendBody: true,
       body: shell,
-      bottomNavigationBar: _GlassNavBar(
-        currentBranch: shell.currentIndex,
-        onSelect: (branch) {
-          HapticFeedback.lightImpact();
-          shell.goBranch(branch, initialLocation: branch == shell.currentIndex);
-        },
-      ),
-    );
-  }
-}
-
-class _GlassNavBar extends StatelessWidget {
-  final int currentBranch;
-  final ValueChanged<int> onSelect;
-
-  const _GlassNavBar({required this.currentBranch, required this.onSelect});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-
-    final barColor = (isDark ? AppPalette.cardDark : Colors.white)
-        .withValues(alpha: isDark ? 0.78 : 0.82);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
-
-    return Padding(
-      padding:
-          EdgeInsets.fromLTRB(16, 0, 16, bottomInset > 0 ? bottomInset : 14),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(26),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            height: AppDims.navBarHeight,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: barColor,
-              borderRadius: BorderRadius.circular(26),
-              border: Border.all(color: borderColor),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.12),
-                  blurRadius: 28,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                for (final item in _navItems)
-                  _NavCell(
-                    item: item,
-                    selected: item.isSelected(currentBranch),
-                    isDark: isDark,
-                    onTap: () => onSelect(item.branch),
-                  ),
-              ],
-            ),
-          ),
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
         ),
-      ),
-    );
-  }
-}
-
-class _NavCell extends StatelessWidget {
-  final _NavItem item;
-  final bool selected;
-  final bool isDark;
-  final VoidCallback onTap;
-
-  const _NavCell({
-    required this.item,
-    required this.selected,
-    required this.isDark,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final inactiveColor =
-        isDark ? AppPalette.inkMutedDark : AppPalette.inkMuted;
-    final activeColor = isDark ? AppPalette.brandSoft : AppPalette.brand;
-
-    return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-          height: 48,
-          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
-          decoration: BoxDecoration(
-            color: selected
-                ? activeColor.withValues(alpha: isDark ? 0.16 : 0.10)
-                : null,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                selected ? item.activeIcon : item.icon,
-                size: 22,
-                color: selected ? activeColor : inactiveColor,
+        child: NavigationBar(
+          selectedIndex: selected < 0 ? 0 : selected,
+          onDestinationSelected: (i) {
+            HapticFeedback.selectionClick();
+            final branch = _navItems[i].branch;
+            shell.goBranch(branch, initialLocation: branch == shell.currentIndex);
+          },
+          destinations: [
+            for (final item in _navItems)
+              NavigationDestination(
+                icon: Icon(item.icon),
+                selectedIcon: Icon(item.activeIcon),
+                label: item.label,
               ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOutCubic,
-                child: selected
-                    ? Padding(
-                        padding: const EdgeInsets.only(left: 7, right: 2),
-                        child: Text(
-                          item.label,
-                          style: TextStyle(
-                            color: activeColor,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );

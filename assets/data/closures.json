@@ -1,0 +1,46 @@
+{
+  "_readme": "Plus 15 closures that routing must respect. Transcribed from the 'Plus 15 construction & closure alerts' table on calgary.ca/plus15. Dates are Calgary local dates; 'end' is exclusive. 'targets.buildings' closes every bridge connected to that building. Refresh: re-read the City table, update this file, set 'retrieved'. See docs/routing.md.",
+  "retrieved": "2026-09-30",
+  "sourceUrl": "https://www.calgary.ca/plus15",
+  "closures": [
+    {
+      "id": "suncor-hanover",
+      "kind": "bridge_closed",
+      "title": "Bridge between Suncor Energy Centre and Hanover Building",
+      "targets": {"bridges": ["1532"]},
+      "start": null,
+      "end": "2027-01-01",
+      "endIsEstimate": true,
+      "reason": "Suncor Building Revitalization Project",
+      "cityText": "Plus 15 bridge between Suncor Energy Centre and Hanover Building — Closed — Opens January 2027",
+      "sourceUrl": "https://www.calgary.ca/plus15",
+      "retrieved": "2026-09-30"
+    },
+    {
+      "id": "place-800",
+      "kind": "bridge_closed",
+      "title": "Bridges connected to Place 800",
+      "targets": {"buildings": ["place_800"]},
+      "start": "2025-01-01",
+      "end": "2026-11-01",
+      "endIsEstimate": true,
+      "reason": "Building Revitalization Project",
+      "cityText": "Plus 15 Bridges Connected to Place 800 — Closed — January 2025 to October 2026",
+      "sourceUrl": "https://www.calgary.ca/plus15",
+      "retrieved": "2026-09-30"
+    },
+    {
+      "id": "640-fifth",
+      "kind": "bridge_closed",
+      "title": "Bridges connected to 640 Fifth",
+      "targets": {"buildings": ["640_fifth"]},
+      "start": "2026-07-13",
+      "end": "2026-11-01",
+      "endIsEstimate": true,
+      "reason": "Building Revitalization Project",
+      "cityText": "Plus 15 Bridges connected to 640 Fifth — Closed — July 13, 2026 to October 31, 2026",
+      "sourceUrl": "https://www.calgary.ca/plus15",
+      "retrieved": "2026-09-30"
+    }
+  ]
+}
