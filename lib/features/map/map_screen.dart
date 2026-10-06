@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,15 +6,19 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
+import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
-import '../../data/models/building.dart';
-import '../../data/models/bridge.dart';
-import '../../data/models/entry_point.dart';
+import '../../routing/network.dart';
+import '../../routing/router.dart';
 import '../../data/models/saved_route.dart';
 import '../../shared/providers/providers.dart';
 import 'services/course_tracker.dart';
 import 'widgets/map_bottom_sheet.dart';
+import 'basemap.dart';
+import 'widgets/network_layers.dart';
+import '../ai/widgets/ai_concierge_sheet.dart';
+import '../../routing/conditions.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -24,8 +27,7 @@ class MapScreen extends ConsumerStatefulWidget {
   ConsumerState<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends ConsumerState<MapScreen>
-    with TickerProviderStateMixin {
+class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateMixin {
   final MapController _mapController = MapController();
 
   static const _calgaryCenter = LatLng(51.0478, -114.0670);
@@ -43,29 +45,57 @@ class _MapScreenState extends ConsumerState<MapScreen>
   LatLng? _smoothedUserLocation;
   LatLng? _lastRawLocation;
   double? _headingRadians;
-  EntryPoint? _guidanceEntryPoint;
-  double? _guidanceEntryDistanceM;
+  CourseTracker? _tracker;
 
-  static const _importantTypes = {
-    'hotel',
-    'retail',
-    'landmark',
-    'convention',
-    'entertainment'
-  };
+  PlannedRoute? _presentedRoute;
+
+  /// Draws a new route on along its length (and eases the camera to it).
+  late final AnimationController _routeReveal = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+    value: 1,
+  );
+
+  /// The map sheet's current size, so the controls ride just above it.
+  final _sheetExtent = ValueNotifier<double>(AppDims.sheetIdle);
+
+  @override
+  void dispose() {
+    _sheetExtent.dispose();
+    _routeReveal.dispose();
+    super.dispose();
+  }
+
+  void _presentRoute(PlannedRoute route) {
+    final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final g = route.geometry;
+    if (_mapReady && g.length >= 2) {
+      final size = MediaQuery.of(context).size;
+      final fit = CameraFit.bounds(
+        bounds: LatLngBounds.fromPoints([for (final p in g) LatLng(p[0], p[1])]),
+        padding: EdgeInsets.fromLTRB(48, 170, 72, size.height * AppDims.sheetMid + 24),
+        maxZoom: 17.5,
+      ).fit(_mapController.camera);
+      _animatedMove(fit.center, fit.zoom);
+    }
+    if (reduceMotion) {
+      _routeReveal.value = 1;
+    } else {
+      _routeReveal.forward(from: 0);
+    }
+  }
+
+  static const _importantTypes = {'hotel', 'retail', 'landmark', 'convention', 'entertainment'};
   static const _importantAmenities = {'transit'};
   static const Distance _distance = Distance();
 
-  @override
-  void initState() => super.initState();
-
-  bool _isBuildingImportant(Building b) {
+  bool _isBuildingImportant(NetBuilding b) {
     if (_importantTypes.contains(b.type)) return true;
     if (b.amenities.any((a) => _importantAmenities.contains(a))) return true;
     return false;
   }
 
-  List<Building> _visibleBuildings(List<Building> buildings) {
+  List<NetBuilding> _visibleBuildings(List<NetBuilding> buildings) {
     if (_currentZoom >= 16.0) return buildings;
     if (_currentZoom >= 15.0) {
       return buildings.where((b) => _isBuildingImportant(b)).toList();
@@ -85,18 +115,15 @@ class _MapScreenState extends ConsumerState<MapScreen>
   void _animatedMove(LatLng dest, double zoom) {
     if (!_mapReady) return;
     final cam = _mapController.camera;
-    final latTween =
-        Tween<double>(begin: cam.center.latitude, end: dest.latitude);
-    final lngTween =
-        Tween<double>(begin: cam.center.longitude, end: dest.longitude);
+    final latTween = Tween<double>(begin: cam.center.latitude, end: dest.latitude);
+    final lngTween = Tween<double>(begin: cam.center.longitude, end: dest.longitude);
     final zoomTween = Tween<double>(begin: cam.zoom, end: zoom);
 
     final controller = AnimationController(
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 650),
       vsync: this,
     );
-    final curve =
-        CurvedAnimation(parent: controller, curve: Curves.easeInOutCubic);
+    final curve = CurvedAnimation(parent: controller, curve: Curves.easeInOutCubic);
 
     controller.addListener(() {
       _mapController.move(
@@ -122,49 +149,86 @@ class _MapScreenState extends ConsumerState<MapScreen>
       });
     });
 
+    // Frame and draw each new route once, including one set before this
+    // screen mounted (e.g. "Preview on map" from the planner).
+    final pending = ref.watch(activeRouteProvider);
+    if (pending != null && !identical(pending, _presentedRoute) && _mapReady) {
+      _presentedRoute = pending;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _presentRoute(pending);
+      });
+    }
+
     // Celebrate arrival exactly once on the transition into the arrived state.
-    ref.listen(navigationSessionProvider.select((s) => s.status),
-        (prev, next) {
-      if (next == NavigationStatus.arrived &&
-          prev != NavigationStatus.arrived) {
+    ref.listen(navigationSessionProvider.select((s) => s.status), (prev, next) {
+      if (next == NavigationStatus.arrived && prev != NavigationStatus.arrived) {
         HapticFeedback.heavyImpact();
       }
     });
 
-    final buildingsAsync = ref.watch(buildingsProvider);
-    final bridgesAsync = ref.watch(bridgesProvider);
+    final networkAsync = ref.watch(networkProvider);
+    final conditions = ref.watch(conditionsProvider).valueOrNull;
     final selectedBuilding = ref.watch(selectedBuildingProvider);
     final activeRoute = ref.watch(activeRouteProvider);
     final session = ref.watch(navigationSessionProvider);
+    final debugGraph = ref.watch(debugGraphProvider);
+    final basemap = ref.watch(basemapProvider);
+    // Overlay styling follows the base map's surface, not just the theme
+    // (e.g. light streets/terrain tiles in dark mode, dark satellite imagery).
+    final darkSurface = basemap.darkSurface(Theme.of(context).brightness == Brightness.dark);
     final arrived = session.status == NavigationStatus.arrived;
-    final bridgePaths = ref.watch(bridgePathsProvider).valueOrNull ?? {};
-    final smoothedRoute = ref.watch(smoothedRouteProvider);
     final userLocation = ref.watch(locationStreamProvider);
-    final displayUserLocation =
-        _smoothedUserLocation ?? userLocation.valueOrNull;
+    final displayUserLocation = _smoothedUserLocation ?? userLocation.valueOrNull;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // The map fills the screen; controls ride just above the sheet's resting
-    // (idle) peek, which itself clears the floating nav bar.
-    final controlsBottom =
-        MediaQuery.of(context).size.height * AppDims.sheetIdle + 12;
-
     return Scaffold(
-      body: buildingsAsync.when(
+      body: networkAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
-        data: (buildings) => bridgesAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Error: $e')),
-          data: (bridges) {
-            final buildingMap = {for (final b in buildings) b.id: b};
-            final visibleBuildings = _visibleBuildings(buildings);
-            final closuresCount = bridges
-                .where((b) => b.status != 'open' || !b.isAccessible)
-                .length;
-            final nearestName =
-                _nearestBuildingName(buildings, displayUserLocation);
+        data: (network) {
+          final buildings = network.buildings;
+          final buildingMap = network.buildingById;
+          final visibleBuildings = _visibleBuildings(buildings);
+          final now = calgaryNow();
+          final closedEdges = conditions?.closedEdgesAt(now) ?? const {};
+          final closedBridges = {
+            for (final id in closedEdges.keys)
+              if (network.edgeById[id]?.bridgeNumber != null) network.edgeById[id]!.bridgeNumber!
+          };
+          final closuresCount = conditions?.activeAt(now).length ?? 0;
+          final nearestName = _nearestBuildingName(buildings, displayUserLocation);
+          final routeBuildings = activeRoute == null
+              ? const <String>{}
+              : {
+                  for (final h in activeRoute.hops)
+                    for (final n in [h.fromNode, h.toNode])
+                      for (final b in network.buildingsAtNode[n] ?? const <NetBuilding>[]) b.id,
+                  activeRoute.destinationBuildingId,
+                  if (activeRoute.originBuildingId != null) activeRoute.originBuildingId!,
+                };
 
+          return LayoutBuilder(builder: (context, box) {
+            // Controls and attribution ride just above the sheet, and step
+            // aside when the sheet leaves too little room for them.
+            Widget aboveSheet(Widget child, {double? left, double? right, double needs = 0}) =>
+                ValueListenableBuilder<double>(
+                  valueListenable: _sheetExtent,
+                  builder: (context, extent, child) {
+                    final bottom = box.maxHeight * extent + 12;
+                    final show = box.maxHeight - bottom - 140 > needs;
+                    return Positioned(
+                      left: left,
+                      right: right,
+                      bottom: bottom,
+                      child: IgnorePointer(
+                        ignoring: !show,
+                        child: AnimatedOpacity(
+                            opacity: show ? 1 : 0, duration: AppMotion.fast, child: child),
+                      ),
+                    );
+                  },
+                  child: child,
+                );
             return Stack(
               children: [
                 FlutterMap(
@@ -173,21 +237,25 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     initialCenter: _calgaryCenter,
                     initialZoom: _defaultZoom,
                     minZoom: 10,
-                    maxZoom: 18,
-                    cameraConstraint:
-                        CameraConstraint.contain(bounds: _calgaryBounds),
+                    maxZoom: 19,
+                    cameraConstraint: CameraConstraint.contain(bounds: _calgaryBounds),
                     onMapReady: () {
                       _mapReady = true;
+                      // A route set before the map existed gets framed now.
+                      final r = ref.read(activeRouteProvider);
+                      if (r != null) {
+                        _presentedRoute = r;
+                        _presentRoute(r);
+                        return;
+                      }
                       final loc = displayUserLocation;
-                      if (loc != null &&
-                          _isInCalgaryBounds(loc.latitude, loc.longitude)) {
+                      if (loc != null && _isInCalgaryBounds(loc.latitude, loc.longitude)) {
                         _animatedMove(loc, 16.0);
                       }
                     },
                     onPositionChanged: (pos, _) {
                       if (pos.zoom != _currentZoom) {
                         setState(() => _currentZoom = pos.zoom);
-                        ref.read(mapZoomProvider.notifier).state = pos.zoom;
                       }
                     },
                     onTap: (_, __) {
@@ -199,49 +267,51 @@ class _MapScreenState extends ConsumerState<MapScreen>
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate: isDark
-                          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
-                          : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-                      subdomains: const ['a', 'b', 'c', 'd'],
+                      // Keyless Esri basemaps (CARTO now watermarks "API KEY
+                      // REQUIRED"); style chosen with the layers control.
+                      key: ValueKey('${basemap.name}-$isDark'),
+                      urlTemplate: basemap.url(isDark),
                       userAgentPackageName: 'com.plus15.navigator',
+                      maxNativeZoom: basemap.maxNativeZoom,
                       maxZoom: 20,
                       tileDisplay: const TileDisplay.fadeIn(),
-                      fallbackUrl:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     ),
-                    // The +15 network — grid-following paths imprinted on the
-                    // map. A glow pass beneath bold skywalk lines; each bridge
-                    // follows the street grid rather than cutting diagonally.
-                    PolylineLayer(
-                      polylines:
-                          _buildNetworkGlow(bridges, bridgePaths),
-                    ),
-                    PolylineLayer(
-                      polylines: _buildBridgeLines(
-                          bridges, bridgePaths, isDark),
-                    ),
-                    if (smoothedRoute.length > 1)
-                      PolylineLayer(
-                        polylines: [
-                          _buildRouteGlowPolyline(smoothedRoute),
-                          _buildRoutePolyline(smoothedRoute),
+                    // Display layer: the City's +15 walkway footprints.
+                    ...networkLayers(network,
+                        closedBridges: closedBridges, zoom: _currentZoom, isDark: darkSurface),
+                    if (debugGraph)
+                      GraphDebugLayer(
+                          network: network, closedEdges: closedEdges, zoom: _currentZoom),
+                    // The route exactly as routed (graph edge geometry).
+                    if (activeRoute != null)
+                      AnimatedBuilder(
+                        animation: _routeReveal,
+                        builder: (context, _) => Stack(
+                          children: routeLayers(activeRoute,
+                              isDark: darkSurface,
+                              reveal: Curves.easeInOutCubic.transform(_routeReveal.value)),
+                        ),
+                      ),
+                    // Building markers step aside while a route is shown so the
+                    // route reads first; the sheet names both ends.
+                    if (_currentZoom >= 13.5 && !debugGraph && activeRoute == null)
+                      MarkerLayer(
+                        markers: _buildMarkers(
+                            visibleBuildings, selectedBuilding, routeBuildings, isDark),
+                      ),
+                    if (activeRoute == null && _currentZoom >= 17 && !debugGraph)
+                      MarkerLayer(markers: doorMarkers(network, isDark: darkSurface)),
+                    if (activeRoute != null && activeRoute.hops.isNotEmpty)
+                      MarkerLayer(
+                        markers: [
+                          ..._buildRouteEndpoints(activeRoute, arrived),
+                          ...routeDoorMarkers(activeRoute, network),
                         ],
-                      ),
-                    if (_currentZoom >= 13.5)
-                      MarkerLayer(
-                        markers: _buildMarkers(visibleBuildings,
-                            selectedBuilding, activeRoute, isDark),
-                      ),
-                    if (activeRoute != null && activeRoute.length > 1)
-                      MarkerLayer(
-                        markers: _buildRouteEndpoints(
-                            activeRoute, buildingMap, arrived),
                       ),
                     if (displayUserLocation != null)
                       MarkerLayer(
-                        markers: [
-                          _buildUserLocationMarker(displayUserLocation)
-                        ],
+                        markers: [_buildUserLocationMarker(displayUserLocation)],
                       ),
                   ],
                 ),
@@ -250,25 +320,54 @@ class _MapScreenState extends ConsumerState<MapScreen>
                   left: 16,
                   right: 16,
                   child: _buildHeader(
-                      context, isDark, closuresCount, nearestName),
+                      context,
+                      closuresCount,
+                      nearestName,
+                      conditions?.networkStatusAt(now),
+                      userLocation.hasValue && userLocation.value == null),
                 ),
-                Positioned(
-                  right: 16,
-                  bottom: controlsBottom,
-                  child: _buildMapControls(context, isDark, userLocation),
+                aboveSheet(_buildMapControls(context, userLocation), right: 16, needs: 300),
+                // Tile attribution (required by the providers).
+                aboveSheet(
+                  left: 16,
+                  right: 80,
+                  IgnorePointer(
+                    child: Align(
+                      alignment: Alignment.bottomLeft,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: (darkSurface ? Colors.black : Colors.white).withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          child: Text(
+                            basemap.attribution,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                fontSize: 10, color: darkSurface ? Colors.white70 : Colors.black87),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                MapBottomSheet(
-                  guidanceEntryPoint: _guidanceEntryPoint,
-                  guidanceEntryDistanceM: _guidanceEntryDistanceM,
-                  onStopNavigation: _stopNavigation,
-                  onStartQuickRoute: _startQuickRoute,
+                NotificationListener<DraggableScrollableNotification>(
+                  onNotification: (n) {
+                    _sheetExtent.value = n.extent;
+                    return false;
+                  },
+                  child: MapBottomSheet(
+                    onStopNavigation: _stopNavigation,
+                    onStartQuickRoute: _startQuickRoute,
+                  ),
                 ),
-                if (arrived)
-                  _buildArrivalCard(context, session, buildingMap, isDark),
+                if (arrived) _buildArrivalCard(context, session, buildingMap, isDark),
               ],
             );
-          },
-        ),
+          });
+        },
       ),
     );
   }
@@ -306,19 +405,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
       );
     }
 
-    if (_guidanceEntryPoint != null && _smoothedUserLocation != null) {
-      _guidanceEntryDistanceM = distance(
-        _smoothedUserLocation!,
-        LatLng(_guidanceEntryPoint!.lat, _guidanceEntryPoint!.lng),
-      );
-    }
-
     if (mounted) setState(() {});
 
     final session = ref.read(navigationSessionProvider);
     if (_mapReady && session.isActive && _smoothedUserLocation != null) {
-      final centerDistance =
-          distance(_mapController.camera.center, _smoothedUserLocation!);
+      final centerDistance = distance(_mapController.camera.center, _smoothedUserLocation!);
       if (centerDistance > 180) {
         _animatedMove(
           _smoothedUserLocation!,
@@ -333,138 +424,68 @@ class _MapScreenState extends ConsumerState<MapScreen>
   Future<void> _updateNavigationFromLocation(LatLng user) async {
     final session = ref.read(navigationSessionProvider);
     final route = ref.read(activeRouteProvider);
-    if (!session.isActive ||
-        session.destinationId == null ||
-        route == null ||
-        route.length < 2) {
+    if (!session.isActive || session.destinationId == null || route == null) {
       return;
     }
+    if (_tracker?.route != route) _tracker = CourseTracker(route);
+    final progress = _tracker!.progressAt(user);
 
-    final buildings = await ref.read(buildingsProvider.future);
-    final bridges = await ref.read(bridgesProvider.future);
-    final graph = await ref.read(graphProvider.future);
-    final pathfinder = await ref.read(pathfinderProvider.future);
-    final entryPoints = await ref.read(entryPointsProvider.future);
-    final buildingMap = {for (final b in buildings) b.id: b};
-    final tracker = CourseTracker(graph: graph, buildingMap: buildingMap);
-
-    final liveSession = ref.read(navigationSessionProvider);
-    if (!liveSession.isActive || liveSession.destinationId == null) return;
-    final destinationId = liveSession.destinationId!;
-    final onRoute = tracker.isOnRoute(user, route, thresholdM: 20);
-
-    if (onRoute) {
+    // Indoor GPS downtown is often 20–40 m off; only treat clearly distant
+    // fixes as off-route.
+    if (progress.offRouteM <= 35) {
       _offRouteStrikes = 0;
-      final nearestNode = tracker.nearestRouteNode(user, route);
-      final progress = nearestNode == null
-          ? const RouteProgress(
-              traveledM: 0,
-              remainingM: 0,
-              progress: 0,
-              nextNodeId: null,
-            )
-          : tracker.computeProgress(route, nearestNode);
-
-      final arrived = nearestNode == destinationId || progress.remainingM <= 25;
-
+      final arrived = progress.remainingM <= 20;
       ref.read(navigationSessionProvider.notifier).update(
-            liveSession.copyWith(
-              status: arrived
-                  ? NavigationStatus.arrived
-                  : NavigationStatus.onCourse,
-              routePath: route,
+            session.copyWith(
+              status: arrived ? NavigationStatus.arrived : NavigationStatus.onCourse,
               remainingDistanceM: arrived ? 0 : progress.remainingM,
-              totalDistanceM: liveSession.totalDistanceM > 0
-                  ? liveSession.totalDistanceM
-                  : (progress.traveledM + progress.remainingM),
-              nextNodeId: progress.nextNodeId,
-              confidence: 0.95,
+              stepIndex: arrived ? route.steps.length - 1 : progress.stepIndex,
+              offRouteM: progress.offRouteM,
               offRouteStrikes: 0,
             ),
           );
-      _guidanceEntryPoint = null;
-      _guidanceEntryDistanceM = null;
       return;
     }
 
     _offRouteStrikes += 1;
     ref.read(navigationSessionProvider.notifier).update(
-          liveSession.copyWith(
+          session.copyWith(
             status: NavigationStatus.rerouting,
-            confidence: 0.45,
+            offRouteM: progress.offRouteM,
             offRouteStrikes: _offRouteStrikes,
           ),
         );
-
     if (_offRouteStrikes < 2) return;
     if (_lastRerouteAt != null &&
-        DateTime.now().difference(_lastRerouteAt!) <
-            const Duration(seconds: 4)) {
+        DateTime.now().difference(_lastRerouteAt!) < const Duration(seconds: 4)) {
       return;
     }
     _lastRerouteAt = DateTime.now();
 
-    final accessibility = ref.read(accessibilityModeProvider);
-    final routeMode = accessibility ? 'accessible' : liveSession.mode;
-
-    if (tracker.isNearNetwork(user, bridges, thresholdM: 60)) {
-      final startNode = tracker.nearestGraphNode(user);
-      if (startNode != null) {
-        final reroute =
-            pathfinder.findRoute(startNode, destinationId, mode: routeMode);
-        if (reroute != null && reroute.path.length > 1) {
-          ref.read(activeRouteProvider.notifier).state = reroute.path;
-          ref.read(activeRouteDistanceProvider.notifier).state =
-              reroute.totalDistance;
-          ref.read(navigationSessionProvider.notifier).update(
-                liveSession.copyWith(
-                  status: NavigationStatus.rerouting,
-                  routePath: reroute.path,
-                  totalDistanceM: reroute.totalDistance,
-                  remainingDistanceM: reroute.totalDistance,
-                  confidence: 0.78,
-                  offRouteStrikes: 0,
-                  clearEntryPoint: true,
-                ),
-              );
-          _offRouteStrikes = 0;
-          _guidanceEntryPoint = null;
-          _guidanceEntryDistanceM = null;
-          if (mounted) setState(() {});
-          return;
-        }
-      }
-    }
-
-    final choice = tracker.chooseBestEntryPoint(
-      user: user,
-      entryPoints: entryPoints,
-      destinationId: destinationId,
-      pathfinder: pathfinder,
-      accessibilityMode: accessibility,
-      mode: routeMode,
+    // Re-route from the GPS fix: the router starts inside the +15 polygon you
+    // are in, or from the nearest building if you are outside the network.
+    final router = await ref.read(routerProvider.future);
+    final result = router.route(
+      RouteOrigin.location(user.latitude, user.longitude),
+      session.destinationId!,
+      profile: session.profile,
+      at: calgaryNow(),
     );
-    if (choice != null) {
-      _guidanceEntryPoint = choice.entryPoint;
-      _guidanceEntryDistanceM = choice.userToEntryM;
-
-      ref.read(activeRouteProvider.notifier).state = choice.route.path;
-      ref.read(activeRouteDistanceProvider.notifier).state =
-          choice.route.totalDistance;
-      ref.read(navigationSessionProvider.notifier).update(
-            liveSession.copyWith(
-              status: NavigationStatus.headingToEntry,
-              entryPointId: choice.entryPoint.id,
-              routePath: choice.route.path,
-              totalDistanceM: choice.route.totalDistance,
-              remainingDistanceM: choice.route.totalDistance,
-              confidence: 0.85,
-              offRouteStrikes: 0,
-            ),
-          );
-      _offRouteStrikes = 0;
-      if (mounted) setState(() {});
-    }
+    if (!result.ok) return;
+    final reroute = result.route!;
+    ref.read(activeRouteProvider.notifier).state = reroute;
+    ref.read(navigationSessionProvider.notifier).update(
+          session.copyWith(
+            status: NavigationStatus.onCourse,
+            totalDistanceM: reroute.lengthM,
+            remainingDistanceM: reroute.lengthM,
+            stepIndex: 0,
+            offRouteM: 0,
+            offRouteStrikes: 0,
+          ),
+        );
+    _offRouteStrikes = 0;
+    if (mounted) setState(() {});
   }
 
   double _bearingRadians(LatLng from, LatLng to) {
@@ -477,185 +498,64 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return atan2(y, x);
   }
 
-  /// Width of a skywalk line, scaled so the network reads as a clean schematic
-  /// when zoomed out and gains presence as you zoom in.
-  double _networkWidth() {
-    if (_currentZoom >= 16.5) return 5.0;
-    if (_currentZoom >= 16.0) return 4.2;
-    if (_currentZoom >= 15.0) return 3.4;
-    if (_currentZoom >= 13.5) return 2.6;
-    return 2.0;
-  }
-
-  /// Crisp skywalk lines using real grid-following geometry. Color encodes
-  /// status: teal = open, amber = stairs-only / limited access, red = closed.
-  List<Polyline> _buildBridgeLines(
-    List<Bridge> bridges,
-    Map<String, List<LatLng>> bridgePaths,
-    bool isDark,
-  ) {
-    final width = _networkWidth();
-    final lines = <Polyline>[];
-
-    for (final bridge in bridges) {
-      final points = bridgePaths[bridge.id];
-      if (points == null || points.length < 2) continue;
-
-      final isClosed = bridge.status != 'open';
-      final notAccessible = !bridge.isAccessible;
-
-      Color color;
-      if (isClosed) {
-        color = AppPalette.danger.withValues(alpha: 0.85);
-      } else if (notAccessible) {
-        color = AppPalette.warning.withValues(alpha: 0.9);
-      } else {
-        color = isDark
-            ? AppPalette.skywalkBright.withValues(alpha: 0.92)
-            : AppPalette.skywalk;
-      }
-
-      lines.add(Polyline(
-        points: points,
-        strokeWidth: isClosed ? width * 0.7 : width,
-        color: color,
-        strokeCap: StrokeCap.round,
-        strokeJoin: StrokeJoin.round,
-        borderStrokeWidth: 1.0,
-        borderColor: (isDark ? Colors.black : Colors.white)
-            .withValues(alpha: isDark ? 0.35 : 0.7),
-      ));
-    }
-    return lines;
-  }
-
-  /// Soft luminous halo beneath open skywalk lines using grid-following paths.
-  List<Polyline> _buildNetworkGlow(
-    List<Bridge> bridges,
-    Map<String, List<LatLng>> bridgePaths,
-  ) {
-    if (_currentZoom < 13.0) return const [];
-    final width = _networkWidth() * 1.9;
-    final glow = <Polyline>[];
-
-    for (final bridge in bridges) {
-      if (bridge.status != 'open') continue;
-      final points = bridgePaths[bridge.id];
-      if (points == null || points.length < 2) continue;
-
-      glow.add(Polyline(
-        points: points,
-        strokeWidth: width,
-        strokeCap: StrokeCap.round,
-        strokeJoin: StrokeJoin.round,
-        color: AppPalette.skywalk.withValues(alpha: 0.10),
-      ));
-    }
-    return glow;
-  }
-
-  Polyline _buildRoutePolyline(List<LatLng> smoothedPoints) {
-    return Polyline(
-      points: smoothedPoints,
-      strokeWidth: 6.5,
-      color: AppPalette.brand,
-      strokeCap: StrokeCap.round,
-      strokeJoin: StrokeJoin.round,
-      borderStrokeWidth: 2.5,
-      borderColor: Colors.white.withValues(alpha: 0.85),
+  /// Start and end markers sit on the route's real first and last points.
+  List<Marker> _buildRouteEndpoints(PlannedRoute route, bool arrived) {
+    final g = route.geometry;
+    final start = LatLng(g.first[0], g.first[1]);
+    final end = LatLng(g.last[0], g.last[1]);
+    final shadow = BoxShadow(
+      color: Colors.black.withValues(alpha: 0.28),
+      blurRadius: 6,
+      offset: const Offset(0, 2),
     );
-  }
 
-  Polyline _buildRouteGlowPolyline(List<LatLng> smoothedPoints) {
-    return Polyline(
-      points: smoothedPoints,
-      strokeWidth: 16,
-      strokeCap: StrokeCap.round,
-      strokeJoin: StrokeJoin.round,
-      color: AppPalette.skywalkBright.withValues(alpha: 0.32),
-      borderStrokeWidth: 0,
+    // Start: a quiet ring. End: the destination pin, which lands as the
+    // route finishes drawing.
+    final startDot = Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(color: AppPalette.ink, width: 4),
+        boxShadow: [shadow],
+      ),
     );
-  }
-
-  List<Marker> _buildRouteEndpoints(
-      List<String> route, Map<String, Building> bMap, bool arrived) {
-    final markers = <Marker>[];
-    final start = bMap[route.first];
-    final end = bMap[route.last];
-
-    if (start != null) {
-      markers.add(Marker(
-        point: LatLng(start.lat, start.lng),
-        width: 30,
-        height: 30,
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF10B981),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 3),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF10B981).withValues(alpha: 0.4),
-                blurRadius: 10,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: const Icon(Icons.trip_origin, size: 12, color: Colors.white),
-        ),
-      ));
-    }
-    if (end != null) {
-      final endColor =
-          arrived ? AppPalette.origin : const Color(0xFFEF4444);
-      Widget endDot = Container(
-        decoration: BoxDecoration(
-          color: endColor,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 3),
-          boxShadow: [
-            BoxShadow(
-              color: endColor.withValues(alpha: 0.4),
-              blurRadius: 10,
-              spreadRadius: 2,
-            ),
-          ],
-        ),
-        child: Icon(arrived ? Icons.check_rounded : Icons.flag_rounded,
-            size: 16, color: Colors.white),
-      );
-      if (arrived) {
-        // Signature arrival detail: a gentle spring-bounce on the destination.
-        endDot = endDot
+    final endColor = arrived ? AppPalette.origin : AppPalette.destination;
+    Widget endPin = Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        color: endColor,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+        boxShadow: [shadow],
+      ),
+      child:
+          Icon(arrived ? Icons.check_rounded : Icons.flag_rounded, size: 15, color: Colors.white),
+    );
+    endPin = arrived
+        ? endPin
             .animate(onPlay: (c) => c.repeat(reverse: true))
-            .scaleXY(
-                begin: 1.0,
-                end: 1.18,
-                duration: 700.ms,
-                curve: Curves.easeInOut);
-      }
-      markers.add(Marker(
-        point: LatLng(end.lat, end.lng),
-        width: 36,
-        height: 36,
-        child: endDot,
-      ));
-    }
-    return markers;
+            .scaleXY(begin: 1.0, end: 1.08, duration: 900.ms, curve: Curves.easeInOut)
+        : endPin
+            .animate(key: ValueKey(route))
+            .scaleXY(begin: 0.4, end: 1, delay: 850.ms, duration: 380.ms, curve: Curves.easeOutBack)
+            .fadeIn(delay: 850.ms, duration: 200.ms);
+    return [
+      Marker(point: start, width: 22, height: 22, child: startDot),
+      Marker(point: end, width: 34, height: 34, child: endPin),
+    ];
   }
 
-  List<Marker> _buildMarkers(List<Building> buildings, Building? selected,
-      List<String>? activeRoute, bool isDark) {
+  List<Marker> _buildMarkers(
+      List<NetBuilding> buildings, NetBuilding? selected, Set<String> routeBuildings, bool isDark) {
     final showChips = _currentZoom >= 16.1;
-    final routeBuildings = activeRoute?.toSet() ?? {};
-    final declutteredChipIds = showChips
-        ? _declutteredChipIds(buildings, selected, routeBuildings)
-        : const <String>{};
+    final declutteredChipIds =
+        showChips ? _declutteredChipIds(buildings, selected, routeBuildings) : const <String>{};
 
-    final onRouteBuildings =
-        buildings.where((b) => routeBuildings.contains(b.id)).toList();
-    final nonRouteBuildings =
-        buildings.where((b) => !routeBuildings.contains(b.id)).toList();
+    final onRouteBuildings = buildings.where((b) => routeBuildings.contains(b.id)).toList();
+    final nonRouteBuildings = buildings.where((b) => !routeBuildings.contains(b.id)).toList();
 
     final allVisible = [...nonRouteBuildings, ...onRouteBuildings];
 
@@ -663,14 +563,13 @@ class _MapScreenState extends ConsumerState<MapScreen>
       final isSelected = b.id == selected?.id;
       final isOnRoute = routeBuildings.contains(b.id);
 
-      final shouldShowChip =
-          isSelected || isOnRoute || declutteredChipIds.contains(b.id);
+      final shouldShowChip = isSelected || isOnRoute || declutteredChipIds.contains(b.id);
 
       if (shouldShowChip) {
         return Marker(
           point: LatLng(b.lat, b.lng),
-          width: isSelected ? 150 : 120,
-          height: isSelected ? 40 : 32,
+          width: isSelected ? 190 : 150,
+          height: 36,
           child: GestureDetector(
             onTap: () {
               HapticFeedback.lightImpact();
@@ -681,10 +580,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
               name: b.name,
               isSelected: isSelected,
               isOnRoute: isOnRoute,
-              isDark: isDark,
               type: b.type,
               hasFood: b.amenities.contains('food'),
-              hasTransit: b.amenities.contains('transit'),
             ),
           ),
         );
@@ -692,26 +589,22 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
       return Marker(
         point: LatLng(b.lat, b.lng),
-        width: 18,
-        height: 18,
+        width: 28,
+        height: 28,
         child: GestureDetector(
           onTap: () {
             HapticFeedback.lightImpact();
             ref.read(selectedBuildingProvider.notifier).state = b;
             _animatedMove(LatLng(b.lat, b.lng), 16.0);
           },
-          child: _BuildingDot(
-            isDark: isDark,
-            type: b.type,
-            hasFood: b.amenities.contains('food'),
-          ),
+          child: _BuildingDot(type: b.type, hasFood: b.amenities.contains('food')),
         ),
       );
     }).toList();
   }
 
-  Set<String> _declutteredChipIds(List<Building> buildings, Building? selected,
-      Set<String> routeBuildings) {
+  Set<String> _declutteredChipIds(
+      List<NetBuilding> buildings, NetBuilding? selected, Set<String> routeBuildings) {
     if (buildings.isEmpty) return const <String>{};
 
     final spacingMeters = _chipSpacingMeters();
@@ -747,8 +640,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
       if (chosen.length >= maxChips) break;
 
       final point = LatLng(building.lat, building.lng);
-      final overlaps = occupied.any((existing) =>
-          _distance.as(LengthUnit.Meter, existing, point) < spacingMeters);
+      final overlaps = occupied
+          .any((existing) => _distance.as(LengthUnit.Meter, existing, point) < spacingMeters);
       if (overlaps) continue;
 
       chosen.add(building.id);
@@ -758,7 +651,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return chosen;
   }
 
-  int _chipPriority(Building b) {
+  int _chipPriority(NetBuilding b) {
     var score = 0;
     if (_importantTypes.contains(b.type)) score += 4;
     if (b.amenities.contains('transit')) score += 3;
@@ -767,10 +660,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return score;
   }
 
+  /// Chips are ~150 px wide: keep their anchors about that far apart on screen.
   double _chipSpacingMeters() {
-    if (_currentZoom >= 17.0) return 70;
-    if (_currentZoom >= 16.5) return 95;
-    return 120;
+    final metresPerPx = 156543.03 * cos(51.05 * pi / 180) / pow(2, _currentZoom);
+    return metresPerPx * 120;
   }
 
   int _maxChipCount() {
@@ -779,13 +672,12 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return 16;
   }
 
-
   /// Nearest building name for the "You're near …" context line. Only resolves
   /// when we have a fix inside the downtown bounds.
-  String? _nearestBuildingName(List<Building> buildings, LatLng? loc) {
+  String? _nearestBuildingName(List<NetBuilding> buildings, LatLng? loc) {
     if (loc == null || buildings.isEmpty) return null;
     if (!_isInCalgaryBounds(loc.latitude, loc.longitude)) return null;
-    Building? best;
+    NetBuilding? best;
     double bestM = double.infinity;
     for (final b in buildings) {
       final d = _distance(loc, LatLng(b.lat, b.lng));
@@ -794,177 +686,137 @@ class _MapScreenState extends ConsumerState<MapScreen>
         best = b;
       }
     }
-    // Only claim "near" if we're plausibly at/in a building.
-    if (best == null || bestM > 220) return null;
-    return best.name;
+    if (best == null) return null;
+    // "Near X" only when plausibly at or in the building; otherwise how far
+    // the +15 is (routes from here walk you to the nearest door).
+    if (bestM <= 220) return 'Near ${best.name}';
+    return bestM < 1000
+        ? '${(bestM / 10).round() * 10} m from the +15'
+        : '${(bestM / 1000).toStringAsFixed(1)} km from the +15';
   }
 
-  Widget _buildHeader(
-      BuildContext context, bool isDark, int closuresCount, String? nearest) {
+  Widget _buildHeader(BuildContext context, int closuresCount, String? nearest,
+      NetworkStatus? status, bool locationOff) {
     final theme = Theme.of(context);
-    final surface =
-        (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.82);
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
+    final scheme = theme.colorScheme;
+    final muted = scheme.onSurfaceVariant;
 
     return Column(
       children: [
         Row(
           children: [
-            // Compact brand mark.
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppPalette.brand,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppPalette.brand.withValues(alpha: 0.3),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: const Center(
-                child: Text('+15',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5)),
+            _FloatingSurface(
+              child: SizedBox.square(
+                dimension: 48,
+                child: Center(
+                  child: Image.asset(AppConstants.logoMark,
+                      width: 30, color: scheme.onSurface, semanticLabel: AppConstants.appName),
+                ),
               ),
             ),
-            const SizedBox(width: 10),
-            // Live context line — the single biggest fix for "where am I?".
-            Expanded(child: _contextChip(context, isDark, nearest)),
-            const SizedBox(width: 10),
-            _circleButton(
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(child: _contextChip(context, nearest, status, locationOff)),
+            const SizedBox(width: AppSpacing.sm),
+            _headerButton(
               context,
-              isDark,
               icon: Icons.notifications_none_rounded,
+              tooltip: closuresCount == 0 ? 'Network status' : '$closuresCount closures',
               badge: closuresCount,
-              onTap: () {
-                HapticFeedback.lightImpact();
-                context.push('/alerts');
-              },
+              onTap: () => context.push('/alerts'),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            _headerButton(
+              context,
+              icon: Icons.settings_outlined,
+              tooltip: 'Settings & help',
+              onTap: () => context.push('/help'),
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        // Tappable search command bar — the primary way to find a place.
-        ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-            child: Material(
-              color: surface,
-              child: InkWell(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  context.go('/search');
-                },
-                child: Container(
-                  height: 48,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: border),
-                    boxShadow: [
-                      BoxShadow(
-                        color:
-                            Colors.black.withValues(alpha: isDark ? 0.32 : 0.08),
-                        blurRadius: 20,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.search_rounded,
-                          size: 20,
-                          color: isDark
-                              ? AppPalette.inkMutedDark
-                              : AppPalette.inkMuted),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Search the +15 network',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: isDark
-                                ? AppPalette.inkMutedDark
-                                : AppPalette.inkMuted,
+        const SizedBox(height: AppSpacing.sm),
+        // The primary way to find a place, with Ask AI alongside.
+        _FloatingSurface(
+          child: SizedBox(
+            height: 52,
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      context.go('/search');
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                      child: Row(
+                        children: [
+                          Icon(Icons.search_rounded, color: muted),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Text(
+                              'Search the +15',
+                              style: theme.textTheme.bodyLarge?.copyWith(color: muted),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        ],
                       ),
-                      _zoomIndicator(),
-                    ],
+                    ),
                   ),
                 ),
-              ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: TextButton.icon(
+                    onPressed: () => showAiConcierge(context),
+                    icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                    label: const Text('Ask AI'),
+                    style: TextButton.styleFrom(
+                      backgroundColor: scheme.primaryContainer,
+                      foregroundColor: scheme.onPrimaryContainer,
+                      minimumSize: const Size(0, 40),
+                      shape: const StadiumBorder(),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ],
-    ).animate().fadeIn(duration: 400.ms).slideY(
-        begin: -0.3, end: 0, duration: 400.ms, curve: Curves.easeOutCubic);
+    ).animate().fadeIn(duration: 300.ms);
   }
 
-  /// "You're near …" glass pill. Falls back to a network label without a fix.
-  Widget _contextChip(BuildContext context, bool isDark, String? nearest) {
+  /// Where you are and whether the +15 is open right now.
+  Widget _contextChip(
+      BuildContext context, String? nearest, NetworkStatus? status, bool locationOff) {
     final theme = Theme.of(context);
-    final surface =
-        (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.82);
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
-    final muted = isDark ? AppPalette.inkMutedDark : AppPalette.inkMuted;
-    final located = nearest != null;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+    final open = status?.open ?? true;
+    final statusColor = open ? AppPalette.origin : AppPalette.danger;
+    return _FloatingSurface(
+      child: InkWell(
+        onTap: () => context.push('/alerts'),
         child: Container(
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: border),
-          ),
+          constraints: const BoxConstraints(minHeight: 48),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 6),
           child: Row(
             children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: located ? AppPalette.origin : AppPalette.warning,
-                ),
-              ),
-              const SizedBox(width: 8),
+              Icon(Icons.circle, size: 9, color: statusColor),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      located ? "You're near" : 'Calgary +15',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                          color: muted,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.4),
+                      status == null ? '+15 network' : status.label,
+                      style: theme.textTheme.labelMedium?.copyWith(color: statusColor),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      located ? nearest : 'Finding you…',
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w700, height: 1.1),
+                      nearest ?? (locationOff ? 'Downtown Calgary' : 'Finding your location…'),
+                      style: theme.textTheme.titleSmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -978,130 +830,55 @@ class _MapScreenState extends ConsumerState<MapScreen>
     );
   }
 
-  Widget _circleButton(
-    BuildContext context,
-    bool isDark, {
+  Widget _headerButton(
+    BuildContext context, {
     required IconData icon,
+    required String tooltip,
     required VoidCallback onTap,
     int badge = 0,
   }) {
-    final surface =
-        (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.82);
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
-    final iconColor = isDark ? AppPalette.inkDark : AppPalette.ink;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Material(
-          color: surface,
-          child: InkWell(
-            onTap: onTap,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: border),
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Icon(icon, size: 20, color: iconColor),
-                  if (badge > 0)
-                    Positioned(
-                      top: 8,
-                      right: 9,
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        constraints:
-                            const BoxConstraints(minWidth: 16, minHeight: 16),
-                        decoration: BoxDecoration(
-                          color: AppPalette.danger,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: isDark
-                                  ? AppPalette.surfaceDark
-                                  : Colors.white,
-                              width: 1.5),
-                        ),
-                        child: Text(
-                          '$badge',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              height: 1),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
+    return _FloatingSurface(
+      child: IconButton(
+        tooltip: tooltip,
+        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+        onPressed: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        icon: Badge(
+          isLabelVisible: badge > 0,
+          label: Text('$badge'),
+          backgroundColor: AppPalette.danger,
+          child: Icon(icon),
         ),
       ),
     );
   }
 
-  Widget _zoomIndicator() {
-    final level = _currentZoom >= 16.0
-        ? 'Detail'
-        : _currentZoom >= 15.0
-            ? 'Standard'
-            : 'Overview';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppPalette.skywalk.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        level,
-        style: const TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: AppPalette.skywalk,
-        ),
-      ),
-    );
-  }
-
-  /// Tears down an active route + navigation session. Mirrors the provider
-  /// writes the old route banner's close button performed, including resetting
-  /// the entry-point guidance held on this State.
+  /// Tears down an active route + navigation session.
   void _stopNavigation() {
     ref.read(activeRouteProvider.notifier).state = null;
-    ref.read(activeRouteDistanceProvider.notifier).state = 0;
     ref.read(navigationSessionProvider.notifier).stop();
-    _guidanceEntryPoint = null;
-    _guidanceEntryDistanceM = null;
+    _tracker = null;
     _offRouteStrikes = 0;
     if (mounted) setState(() {});
   }
 
   /// The arrival moment — a calm, celebratory card that slides up over the map
   /// when navigation completes. Tasteful, no confetti (per the design spec).
-  Widget _buildArrivalCard(BuildContext context, NavigationSession session,
-      Map<String, Building> bMap, bool isDark) {
+  Widget _buildArrivalCard(
+      BuildContext context, NavigationSession session, Map<String, NetBuilding> bMap, bool isDark) {
     final theme = Theme.of(context);
-    final dest =
-        session.destinationId == null ? null : bMap[session.destinationId!];
+    final dest = session.destinationId == null ? null : bMap[session.destinationId!];
     final destName = dest?.name ?? 'your destination';
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-
     return Positioned(
       left: 16,
       right: 16,
-      bottom: AppDims.navBarHeight + (bottomInset > 0 ? bottomInset : 14) + 24,
+      bottom: AppSpacing.lg,
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.lg),
         decoration: BoxDecoration(
-          color: isDark ? AppPalette.cardDark : Colors.white,
+          color: theme.colorScheme.surface,
           borderRadius: AppRadii.rCard,
           border: Border.all(color: AppPalette.origin.withValues(alpha: 0.3)),
           boxShadow: [
@@ -1125,19 +902,14 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     shape: BoxShape.circle,
                     color: AppPalette.origin.withValues(alpha: 0.14),
                   ),
-                  child: const Icon(Icons.check_circle_rounded,
-                      color: AppPalette.origin, size: 26),
-                )
-                    .animate()
-                    .scale(duration: 360.ms, curve: Curves.easeOutBack),
+                  child: const Icon(Icons.check_circle_rounded, color: AppPalette.origin, size: 26),
+                ).animate().scale(duration: 360.ms, curve: Curves.easeOutBack),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("You've arrived",
-                          style: theme.textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w800)),
+                      Text("You've arrived", style: theme.textTheme.titleLarge),
                       Text(destName,
                           style: theme.textTheme.bodyMedium
                               ?.copyWith(color: theme.textTheme.bodySmall?.color),
@@ -1155,15 +927,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                   child: OutlinedButton.icon(
                     onPressed: () => _saveArrival(session),
                     icon: const Icon(Icons.bookmark_add_outlined, size: 18),
-                    label: const Text('Save place'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppPalette.brand,
-                      side: BorderSide(
-                          color: AppPalette.brand.withValues(alpha: 0.4)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: AppRadii.rControl),
-                    ),
+                    label: const Text('Save route'),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
@@ -1173,11 +937,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
                       HapticFeedback.lightImpact();
                       _stopNavigation();
                     },
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: AppRadii.rControl),
-                    ),
                     child: const Text('Done'),
                   ),
                 ),
@@ -1194,23 +953,21 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
   void _saveArrival(NavigationSession session) {
     final route = ref.read(activeRouteProvider);
-    if (route == null || route.length < 2) {
+    final fromId = route?.originBuildingId;
+    if (route == null || fromId == null) {
       _stopNavigation();
       return;
     }
-    final buildings =
-        ref.read(buildingsProvider).valueOrNull ?? const <Building>[];
-    final bMap = {for (final b in buildings) b.id: b};
-    final fromName = bMap[route.first]?.name ?? route.first;
-    final toName = bMap[route.last]?.name ?? route.last;
-    final now = DateTime.now();
+    final bMap = ref.read(networkProvider).valueOrNull?.buildingById ?? const {};
+    final toId = route.destinationBuildingId;
+    final now = calgaryNow();
     ref.read(savedRoutesProvider.notifier).add(
           SavedRoute(
-            id: '${route.first}_${route.last}_${now.millisecondsSinceEpoch}',
-            name: '$fromName → $toName',
-            fromId: route.first,
-            toId: route.last,
-            routeType: session.mode,
+            id: '${fromId}_${toId}_${now.millisecondsSinceEpoch}',
+            name: '${bMap[fromId]?.name ?? fromId} → ${bMap[toId]?.name ?? toId}',
+            fromId: fromId,
+            toId: toId,
+            routeType: session.profile.name,
             createdAt: now,
           ),
         );
@@ -1223,117 +980,167 @@ class _MapScreenState extends ConsumerState<MapScreen>
     _stopNavigation();
   }
 
-  Widget _buildMapControls(
-      BuildContext context, bool isDark, AsyncValue<LatLng?> userLocation) {
+  Widget _buildMapControls(BuildContext context, AsyncValue<LatLng?> userLocation) {
+    final divider = Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _controlBtn(Icons.add_rounded, () {
-          final z = _mapController.camera.zoom;
-          _animatedMove(_mapController.camera.center, (z + 0.5).clamp(10, 18));
-        }, isDark),
-        const SizedBox(height: 8),
-        _controlBtn(Icons.remove_rounded, () {
-          final z = _mapController.camera.zoom;
-          _animatedMove(_mapController.camera.center, (z - 0.5).clamp(10, 18));
-        }, isDark),
-        const SizedBox(height: 14),
-        _controlBtn(Icons.view_in_ar_rounded, () {
-          context.push('/map3d');
-        }, isDark),
-        const SizedBox(height: 8),
-        _controlBtn(Icons.location_city_rounded, () {
-          _animatedMove(_plus15Center, 15.8);
-        }, isDark),
-        const SizedBox(height: 8),
-        _controlBtn(
-          Icons.my_location_rounded,
-          () {
-            final pos = _smoothedUserLocation ?? userLocation.valueOrNull;
-            if (pos != null) {
-              _animatedMove(pos, 16.5);
-            } else {
-              _animatedMove(_calgaryCenter, _defaultZoom);
-            }
-          },
-          isDark,
-          accent: true,
-        ),
-      ],
-    )
-        .animate()
-        .fadeIn(duration: 400.ms, delay: 200.ms)
-        .slideX(begin: 0.3, end: 0, curve: Curves.easeOutCubic);
-  }
-
-  Widget _controlBtn(IconData icon, VoidCallback onTap, bool isDark,
-      {bool accent = false}) {
-    return Material(
-      color: accent
-          ? const Color(0xFF4F46E5)
-          : isDark
-              ? const Color(0xFF18181B).withValues(alpha: 0.92)
-              : Colors.white.withValues(alpha: 0.95),
-      borderRadius: BorderRadius.circular(14),
-      elevation: 0,
-      child: InkWell(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          onTap();
-        },
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          width: 46,
-          height: 46,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: accent
-                  ? Colors.transparent
-                  : isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : Colors.black.withValues(alpha: 0.06),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: accent
-                    ? const Color(0xFF4F46E5).withValues(alpha: 0.3)
-                    : Colors.black.withValues(alpha: 0.08),
-                blurRadius: 12,
-                offset: const Offset(0, 2),
-              ),
+        _FloatingSurface(
+          child: Column(
+            children: [
+              _controlBtn(Icons.add_rounded, 'Zoom in', () {
+                final z = _mapController.camera.zoom;
+                _animatedMove(_mapController.camera.center, (z + 1).clamp(10, 19));
+              }),
+              divider,
+              _controlBtn(Icons.remove_rounded, 'Zoom out', () {
+                final z = _mapController.camera.zoom;
+                _animatedMove(_mapController.camera.center, (z - 1).clamp(10, 19));
+              }),
             ],
           ),
-          child: Icon(icon,
-              size: 20,
-              color: accent
-                  ? Colors.white
-                  : isDark
-                      ? const Color(0xFFA1A1AA)
-                      : const Color(0xFF52525B)),
         ),
-      ),
+        const SizedBox(height: AppSpacing.sm),
+        _FloatingSurface(
+          child: Column(
+            children: [
+              _controlBtn(Icons.layers_outlined, 'Map style', () => _showBasemapPicker(context)),
+              divider,
+              _controlBtn(Icons.view_in_ar_rounded, '3D view', () => context.push('/map3d')),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        _FloatingSurface(
+          child: _controlBtn(Icons.my_location_rounded, 'My location', () {
+            final pos = _smoothedUserLocation ?? userLocation.valueOrNull;
+            if (pos != null && _isInCalgaryBounds(pos.latitude, pos.longitude)) {
+              _animatedMove(pos, 16.5);
+            } else {
+              _animatedMove(_plus15Center, 15.8);
+            }
+          }, accent: true),
+        ),
+      ],
+    ).animate().fadeIn(duration: 300.ms, delay: 150.ms);
+  }
+
+  /// Map style picker: Map / Streets / Satellite / Terrain.
+  void _showBasemapPicker(BuildContext context) {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      showDragHandle: true,
+      builder: (ctx) => Consumer(builder: (ctx, ref, _) {
+        final theme = Theme.of(ctx);
+        final dark = theme.brightness == Brightness.dark;
+        final current = ref.watch(basemapProvider);
+        final accent = dark ? AppPalette.brandSoft : AppPalette.brand;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Map style', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    for (final b in Basemap.values) ...[
+                      Expanded(
+                        child: Semantics(
+                          button: true,
+                          selected: b == current,
+                          label: '${b.label} map style',
+                          child: GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              ref.read(basemapProvider.notifier).select(b);
+                              Navigator.of(ctx).pop();
+                            },
+                            child: AnimatedContainer(
+                              duration: AppMotion.fast,
+                              curve: AppMotion.curve,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              decoration: BoxDecoration(
+                                color: b == current
+                                    ? accent.withValues(alpha: dark ? 0.12 : 0.07)
+                                    : (dark ? AppPalette.cardDark : AppPalette.cardLight),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: b == current
+                                      ? accent
+                                      : (dark ? AppPalette.borderDark : AppPalette.borderLight),
+                                  width: b == current ? 1.6 : 1,
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(b.icon,
+                                      color:
+                                          b == current ? accent : theme.textTheme.bodySmall?.color),
+                                  const SizedBox(height: 6),
+                                  Text(b.label,
+                                      style: theme.textTheme.labelLarge?.copyWith(
+                                          color: b == current ? accent : null,
+                                          fontWeight: FontWeight.w700)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (b != Basemap.values.last) const SizedBox(width: 8),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(current.attribution, style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _controlBtn(IconData icon, String tooltip, VoidCallback onTap, {bool accent = false}) {
+    final scheme = Theme.of(context).colorScheme;
+    return IconButton(
+      tooltip: tooltip,
+      constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+      color: accent ? scheme.primary : scheme.onSurface,
+      onPressed: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      icon: Icon(icon),
     );
   }
 
   Future<void> _startQuickRoute(String fromId, String toId, String mode) async {
-    final pathfinder = await ref.read(pathfinderProvider.future);
-    final result = pathfinder.findRoute(fromId, toId, mode: mode);
-    if (result != null) {
-      ref.read(activeRouteProvider.notifier).state = result.path;
-      ref.read(activeRouteDistanceProvider.notifier).state =
-          result.totalDistance;
-      ref.read(navigationSessionProvider.notifier).start(
-            destinationId: toId,
-            mode: mode,
-            routePath: result.path,
-            totalDistanceM: result.totalDistance,
-          );
-      _guidanceEntryPoint = null;
-      _guidanceEntryDistanceM = null;
+    final router = await ref.read(routerProvider.future);
+    final result = router.route(RouteOrigin.building(fromId), toId,
+        profile: profileFromName(mode), at: calgaryNow());
+    if (!mounted) return;
+    final route = result.route ?? result.viaClosed;
+    if (route == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(result.unavailableReason!)));
+      return;
     }
+    ref.read(activeRouteProvider.notifier).state = route;
+    if (route.previewOnly) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(route.opensAt != null
+              ? 'The +15 is closed now. Showing the route so you can plan ahead.'
+              : 'This route goes through a closed bridge. Preview only.')));
+      return;
+    }
+    ref.read(navigationSessionProvider.notifier).start(route: route);
   }
-
 }
 
 class _PulsingLocationDot extends StatefulWidget {
@@ -1378,8 +1185,7 @@ class _PulsingLocationDotState extends State<_PulsingLocationDot>
               height: 28 + (pulse * 16),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF4F46E5)
-                    .withValues(alpha: 0.15 * (1 - pulse)),
+                color: AppPalette.brand.withValues(alpha: 0.15 * (1 - pulse)),
               ),
             ),
             Container(
@@ -1387,11 +1193,11 @@ class _PulsingLocationDotState extends State<_PulsingLocationDot>
               height: 16,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF4F46E5),
+                color: AppPalette.brand,
                 border: Border.all(color: Colors.white, width: 3),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF4F46E5).withValues(alpha: 0.4),
+                    color: Colors.black.withValues(alpha: 0.18),
                     blurRadius: 8,
                     spreadRadius: 1,
                   ),
@@ -1414,50 +1220,67 @@ class _PulsingLocationDotState extends State<_PulsingLocationDot>
   }
 }
 
-class _BuildingDot extends StatelessWidget {
-  final bool isDark;
-  final String type;
-  final bool hasFood;
-
-  const _BuildingDot({
-    required this.isDark,
-    required this.type,
-    required this.hasFood,
-  });
+/// The floating chrome over the map: theme surface, hairline border and one
+/// soft shadow. Every header control and map button sits on one of these.
+class _FloatingSurface extends StatelessWidget {
+  final Widget child;
+  const _FloatingSurface({required this.child});
 
   @override
   Widget build(BuildContext context) {
-    Color dotColor;
-    if (type == 'hotel') {
-      dotColor = const Color(0xFFF59E0B);
-    } else if (type == 'retail' || type == 'entertainment') {
-      dotColor = const Color(0xFF8B5CF6);
-    } else if (type == 'landmark') {
-      dotColor = const Color(0xFFEF4444);
-    } else if (hasFood) {
-      dotColor = const Color(0xFFEF4444);
-    } else {
-      dotColor = isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8);
-    }
+    final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: AppRadii.rControl,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: dark ? 0.35 : 0.10),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: scheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadii.rControl,
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
+    );
+  }
+}
 
+Color _markerColor(String type, bool hasFood, ColorScheme scheme) => switch (type) {
+      'hotel' ||
+      'retail' ||
+      'entertainment' ||
+      'landmark' ||
+      'transit' =>
+        AppPalette.typeColor(type),
+      _ => hasFood ? AppPalette.amenityColor('food') : scheme.outline,
+    };
+
+class _BuildingDot extends StatelessWidget {
+  final String type;
+  final bool hasFood;
+
+  const _BuildingDot({required this.type, required this.hasFood});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Container(
-        width: 10,
-        height: 10,
+        width: 12,
+        height: 12,
         decoration: BoxDecoration(
-          color: dotColor,
+          color: _markerColor(type, hasFood, scheme),
           shape: BoxShape.circle,
-          border: Border.all(
-            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-            width: 2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: dotColor.withValues(alpha: 0.3),
-              blurRadius: 4,
-              spreadRadius: 0,
-            ),
-          ],
+          border: Border.all(color: scheme.surface, width: 2),
         ),
       ),
     );
@@ -1468,129 +1291,52 @@ class _BuildingChip extends StatelessWidget {
   final String name;
   final bool isSelected;
   final bool isOnRoute;
-  final bool isDark;
   final String type;
   final bool hasFood;
-  final bool hasTransit;
 
   const _BuildingChip({
     required this.name,
     required this.isSelected,
     required this.isOnRoute,
-    required this.isDark,
     required this.type,
     required this.hasFood,
-    required this.hasTransit,
   });
 
   @override
   Widget build(BuildContext context) {
-    final bgColor = isSelected
-        ? const Color(0xFF4F46E5)
-        : isOnRoute
-            ? const Color(0xFF4F46E5).withValues(alpha: 0.9)
-            : isDark
-                ? const Color(0xFF18181B).withValues(alpha: 0.92)
-                : Colors.white.withValues(alpha: 0.95);
-
-    final textColor = isSelected || isOnRoute
-        ? Colors.white
-        : isDark
-            ? const Color(0xFFE4E4E7)
-            : const Color(0xFF27272A);
-
-    final borderColor = isSelected
-        ? const Color(0xFF4F46E5)
-        : isOnRoute
-            ? const Color(0xFF60A5FA)
-            : isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : Colors.black.withValues(alpha: 0.06);
-
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final strong = isSelected || isOnRoute;
     return Center(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
         decoration: BoxDecoration(
-          color: bgColor,
+          color: strong ? scheme.primary : scheme.surface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: borderColor, width: isSelected ? 1.5 : 1),
+          border: Border.all(color: strong ? scheme.primary : scheme.outlineVariant),
           boxShadow: [
-            if (isSelected)
-              BoxShadow(
-                color: const Color(0xFF4F46E5).withValues(alpha: 0.3),
-                blurRadius: 14,
-                spreadRadius: 1,
-              )
-            else
-              BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.14),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (type == 'hotel')
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Icon(Icons.hotel_rounded,
-                    size: 11,
-                    color: isSelected ? Colors.white : const Color(0xFFF59E0B)),
-              ),
-            if (type == 'retail' || type == 'entertainment')
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Icon(
-                    type == 'entertainment'
-                        ? Icons.theaters_rounded
-                        : Icons.shopping_bag_rounded,
-                    size: 11,
-                    color: isSelected ? Colors.white : const Color(0xFF8B5CF6)),
-              ),
-            if (hasTransit)
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Icon(Icons.train_rounded,
-                    size: 11,
-                    color: isSelected ? Colors.white : const Color(0xFF10B981)),
-              ),
-            if (type == 'landmark')
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Icon(Icons.star_rounded,
-                    size: 11,
-                    color: isSelected ? Colors.white : const Color(0xFFF59E0B)),
-              ),
+            Icon(Icons.circle,
+                size: 7, color: strong ? scheme.onPrimary : _markerColor(type, hasFood, scheme)),
+            const SizedBox(width: 5),
             Flexible(
               child: Text(
                 name,
-                style: TextStyle(
-                  fontSize: isSelected ? 11 : 10,
-                  fontWeight: isSelected || isOnRoute
-                      ? FontWeight.w700
-                      : FontWeight.w500,
-                  color: textColor,
-                  letterSpacing: -0.2,
-                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium
+                    ?.copyWith(color: strong ? scheme.onPrimary : scheme.onSurface),
               ),
             ),
-            if (hasFood && !isSelected)
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Container(
-                  width: 5,
-                  height: 5,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFEF4444),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
           ],
         ),
       ),

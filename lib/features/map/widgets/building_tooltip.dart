@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../../../data/models/building.dart';
+import '../../../core/theme/app_palette.dart';
+import '../../../core/theme/app_spacing.dart';
 import '../../../data/models/shop.dart';
+import '../../../routing/network.dart';
+import '../../../shared/widgets/brand_logo.dart';
+import '../../shop_detail/shop_detail_sheet.dart';
+import '../../transit/street_directions.dart';
 
+/// A selected building in the map sheet: name, what's inside (with logos),
+/// directions through the +15 and street directions to get there.
 class BuildingTooltip extends StatelessWidget {
-  final Building building;
+  final NetBuilding building;
   final List<Shop> shops;
   final VoidCallback onNavigateHere;
   final VoidCallback onClose;
-
-  /// When true, renders just the content column with no card chrome or entrance
-  /// animation — for use inside a bottom sheet that already provides those.
-  final bool embedded;
 
   const BuildingTooltip({
     super.key,
@@ -19,340 +21,117 @@ class BuildingTooltip extends StatelessWidget {
     required this.shops,
     required this.onNavigateHere,
     required this.onClose,
-    this.embedded = false,
   });
+
+  static const _amenityLabels = {
+    'food': (Icons.restaurant_rounded, 'Food court'),
+    'shopping': (Icons.shopping_bag_rounded, 'Shopping'),
+    'hotel': (Icons.hotel_rounded, 'Hotel'),
+    'transit': (Icons.train_rounded, 'CTrain'),
+  };
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final buildingShops =
-        shops.where((s) => s.buildingId == building.id).toList();
+    final scheme = theme.colorScheme;
+    final here = shops.where((s) => s.buildingId == building.id).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final typeColor = AppPalette.typeColor(building.type);
 
-    final content = Column(
+    return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: _children(context, theme, isDark, buildingShops),
-    );
-
-    if (embedded) return content;
-
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF18181B) : Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : const Color(0xFFF1F5F9),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.08),
-            blurRadius: 32,
-            offset: const Offset(0, 8),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: content,
-    )
-        .animate()
-        .fadeIn(duration: 250.ms)
-        .slideY(begin: 0.08, end: 0, duration: 250.ms, curve: Curves.easeOutCubic);
-  }
-
-  List<Widget> _children(BuildContext context, ThemeData theme, bool isDark,
-      List<Shop> buildingShops) {
-    return [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: _typeColor(building.type),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(_typeIcon(building.type),
-                    color: Colors.white, size: 20),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      building.name,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    if (building.address.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(building.address,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: isDark
-                                  ? Colors.white.withValues(alpha: 0.5)
-                                  : const Color(0xFF94A3B8),
-                            )),
-                      ),
-                  ],
-                ),
-              ),
-              Material(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                child: InkWell(
-                  onTap: onClose,
-                  borderRadius: BorderRadius.circular(10),
-                  child: SizedBox(
-                    width: 34,
-                    height: 34,
-                    child: Icon(Icons.close_rounded,
-                        size: 16,
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.5)
-                            : const Color(0xFF94A3B8)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (building.amenities.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: building.amenities.map((a) {
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: _amenityColor(a).withValues(alpha: isDark ? 0.15 : 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: _amenityColor(a).withValues(alpha: 0.15),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(_amenityIcon(a),
-                          size: 12, color: _amenityColor(a)),
-                      const SizedBox(width: 4),
-                      Text(
-                        a[0].toUpperCase() + a.substring(1),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: _amenityColor(a),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-          if (buildingShops.isNotEmpty) ...[
-            const SizedBox(height: 14),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.04)
-                    : const Color(0xFFF8FAFC),
+                color: typeColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
+              child: Icon(Icons.apartment_rounded, color: typeColor),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '${buildingShops.length} place${buildingShops.length > 1 ? 's' : ''} here',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.7)
-                          : const Color(0xFF64748B),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ...buildingShops.take(3).map((s) => Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primary
-                                    .withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Icon(_categoryIcon(s.category.name),
-                                  size: 12, color: theme.colorScheme.primary),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(s.name,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                      fontWeight: FontWeight.w500)),
-                            ),
-                          ],
-                        ),
-                      )),
-                  if (buildingShops.length > 3)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        '+${buildingShops.length - 3} more',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: const Color(0xFF4F46E5),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                  Text(building.name,
+                      maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleLarge),
+                  if (building.address.isNotEmpty)
+                    Text(building.address,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
                 ],
               ),
             ),
-          ],
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: onNavigateHere,
-              icon: const Icon(Icons.directions_rounded, size: 18),
-              label: const Text('Navigate Here',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF4F46E5),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                elevation: 0,
-              ),
+            IconButton(
+              tooltip: 'Close',
+              onPressed: onClose,
+              icon: const Icon(Icons.close_rounded),
             ),
+          ],
+        ),
+        if (building.amenities.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.lg,
+            runSpacing: AppSpacing.xs,
+            children: [
+              for (final a in building.amenities)
+                if (_amenityLabels[a] case (final icon, final label))
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 16, color: AppPalette.amenityColor(a == 'shopping' ? 'retail' : a)),
+                      const SizedBox(width: 6),
+                      Text(label, style: theme.textTheme.labelLarge),
+                    ],
+                  ),
+            ],
           ),
-        ];
-  }
-
-  Color _typeColor(String type) {
-    switch (type) {
-      case 'hotel':
-        return const Color(0xFFF59E0B);
-      case 'retail':
-        return const Color(0xFF8B5CF6);
-      case 'landmark':
-        return const Color(0xFFEF4444);
-      case 'entertainment':
-        return const Color(0xFFF97316);
-      case 'government':
-        return const Color(0xFF06B6D4);
-      case 'convention':
-        return const Color(0xFF10B981);
-      case 'park':
-        return const Color(0xFF22C55E);
-      default:
-        return const Color(0xFF4F46E5);
-    }
-  }
-
-  IconData _typeIcon(String type) {
-    switch (type) {
-      case 'hotel':
-        return Icons.hotel_rounded;
-      case 'retail':
-        return Icons.shopping_bag_rounded;
-      case 'landmark':
-        return Icons.star_rounded;
-      case 'entertainment':
-        return Icons.theaters_rounded;
-      case 'government':
-        return Icons.account_balance_rounded;
-      case 'convention':
-        return Icons.business_rounded;
-      case 'park':
-        return Icons.park_rounded;
-      case 'parking':
-        return Icons.local_parking_rounded;
-      case 'residential':
-        return Icons.apartment_rounded;
-      default:
-        return Icons.location_city_rounded;
-    }
-  }
-
-  Color _amenityColor(String amenity) {
-    switch (amenity) {
-      case 'food':
-        return const Color(0xFFEF4444);
-      case 'retail':
-        return const Color(0xFF8B5CF6);
-      case 'transit':
-        return const Color(0xFF10B981);
-      case 'washroom':
-        return const Color(0xFF06B6D4);
-      case 'hotel':
-        return const Color(0xFFF59E0B);
-      case 'health':
-        return const Color(0xFFEC4899);
-      case 'entertainment':
-        return const Color(0xFFF97316);
-      default:
-        return const Color(0xFF64748B);
-    }
-  }
-
-  IconData _amenityIcon(String amenity) {
-    switch (amenity) {
-      case 'food':
-        return Icons.restaurant_rounded;
-      case 'retail':
-        return Icons.shopping_bag_rounded;
-      case 'transit':
-        return Icons.train_rounded;
-      case 'washroom':
-        return Icons.wc_rounded;
-      case 'hotel':
-        return Icons.hotel_rounded;
-      case 'health':
-        return Icons.local_hospital_rounded;
-      case 'entertainment':
-        return Icons.theaters_rounded;
-      default:
-        return Icons.place_rounded;
-    }
-  }
-
-  IconData _categoryIcon(String category) {
-    switch (category) {
-      case 'food':
-        return Icons.restaurant_rounded;
-      case 'retail':
-        return Icons.shopping_bag_rounded;
-      case 'services':
-        return Icons.business_center_rounded;
-      case 'transit':
-        return Icons.train_rounded;
-      case 'washroom':
-        return Icons.wc_rounded;
-      case 'hotel':
-        return Icons.hotel_rounded;
-      case 'health':
-        return Icons.local_hospital_rounded;
-      case 'entertainment':
-        return Icons.theaters_rounded;
-      default:
-        return Icons.place_rounded;
-    }
+        ],
+        if (building.noElevatorToStreet) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, size: 16, color: AppPalette.warning),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text('No elevator between street and +15 (City map)',
+                    style: theme.textTheme.bodySmall),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: AppSpacing.lg),
+        FilledButton.icon(
+          onPressed: onNavigateHere,
+          icon: const Icon(Icons.directions_walk_rounded),
+          label: const Text('Directions through the +15'),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        StreetDirectionsRow(building: building),
+        if (here.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xl),
+          Text(here.length == 1 ? '1 place inside' : '${here.length} places inside',
+              style: theme.textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.xs),
+          for (final s in here)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: BrandLogo(shop: s, size: 40),
+              title: Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(s.category.label, maxLines: 1),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => showShopDetail(context, s),
+            ),
+        ],
+      ],
+    );
   }
 }

@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
-import '../../data/models/building.dart';
+import '../../routing/network.dart';
 import '../../data/models/opening_hours.dart';
 import '../../data/models/shop.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_pill.dart';
+import '../../shared/widgets/brand_logo.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/screen_header.dart';
 import '../../shared/widgets/shimmer_loading.dart';
 import '../shop_detail/shop_detail_sheet.dart';
+import '../../routing/conditions.dart';
 
 /// The full +15 business directory: every shop, restaurant and service in the
 /// network, grouped by the building it lives in. Search and Explore answer
@@ -51,7 +52,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
   Widget build(BuildContext context) {
     final shopsAsync = ref.watch(shopsProvider);
     final buildings =
-        ref.watch(buildingsProvider).valueOrNull ?? const <Building>[];
+        ref.watch(buildingsProvider).valueOrNull ?? const <NetBuilding>[];
     final buildingMap = {for (final b in buildings) b.id: b};
 
     return Scaffold(
@@ -67,7 +68,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
   }
 
   Widget _buildBody(
-      BuildContext context, List<Shop> shops, Map<String, Building> bMap) {
+      BuildContext context, List<Shop> shops, Map<String, NetBuilding> bMap) {
     final listed = shops
         .where((s) => _listedCategories.contains(s.category))
         .toList(growable: false);
@@ -105,7 +106,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
         else
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm,
-                AppSpacing.lg, AppSpacing.xxxl + 60),
+                AppSpacing.lg, AppSpacing.bottomScrollClearance),
             sliver: SliverList.builder(
               itemCount: groups.length,
               itemBuilder: (context, i) {
@@ -125,12 +126,12 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
 
   // --- Filtering ---------------------------------------------------------
 
-  List<Shop> _applyFilters(List<Shop> shops, Map<String, Building> bMap) {
+  List<Shop> _applyFilters(List<Shop> shops, Map<String, NetBuilding> bMap) {
     final q = _query.trim().toLowerCase();
     return shops.where((s) {
       if (_category != null && s.category != _category) return false;
       if (_openNowOnly &&
-          !OpeningHours.parse(s.hours).statusAt(DateTime.now()).open) {
+          !OpeningHours.parse(s.hours).statusAt(calgaryNow()).open) {
         return false;
       }
       if (q.isEmpty) return true;
@@ -141,8 +142,8 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     }).toList(growable: false);
   }
 
-  List<({Building? building, List<Shop> shops})> _groupByBuilding(
-      List<Shop> shops, Map<String, Building> bMap) {
+  List<({NetBuilding? building, List<Shop> shops})> _groupByBuilding(
+      List<Shop> shops, Map<String, NetBuilding> bMap) {
     final byBuilding = <String, List<Shop>>{};
     for (final s in shops) {
       byBuilding.putIfAbsent(s.buildingId, () => []).add(s);
@@ -170,7 +171,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
       onChanged: (v) => setState(() => _query = v),
       textInputAction: TextInputAction.search,
       decoration: InputDecoration(
-        hintText: 'Search businesses, food, buildings…',
+        hintText: 'Search places or buildings',
         prefixIcon: const Icon(Icons.search_rounded, size: 20),
         suffixIcon: _query.isEmpty
             ? null
@@ -188,10 +189,10 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
 
   Widget _filterRow(BuildContext context) {
     return SizedBox(
-      height: 36,
+      height: 48,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 6),
         children: [
           AppPill(
             label: 'All',
@@ -223,10 +224,10 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
   // --- Building group card -----------------------------------------------
 
   Widget _buildingGroup(
-      BuildContext context, Building? building, List<Shop> shops) {
+      BuildContext context, NetBuilding? building, List<Shop> shops) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final muted = isDark ? AppPalette.inkMutedDark : AppPalette.inkMuted;
+    final scheme = theme.colorScheme;
+    final muted = scheme.onSurfaceVariant;
 
     return GlassCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -235,20 +236,11 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
             child: Row(
               children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: AppPalette.brand.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                  child: const Icon(Icons.location_city_rounded,
-                      size: 18, color: AppPalette.brand),
-                ),
-                const SizedBox(width: 10),
+                Icon(Icons.apartment_rounded, size: 22, color: scheme.primary),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -257,8 +249,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                         building?.name ?? 'On the network',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                        style: theme.textTheme.titleMedium,
                       ),
                       if (building != null && building.address.isNotEmpty)
                         Text(
@@ -271,10 +262,10 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 Text(
-                  '${shops.length}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                      color: muted, fontWeight: FontWeight.w700),
+                  shops.length == 1 ? '1 place' : '${shops.length} places',
+                  style: theme.textTheme.labelMedium?.copyWith(color: muted),
                 ),
               ],
             ),
@@ -286,76 +277,50 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     );
   }
 
-  Widget _shopRow(BuildContext context, Shop shop, Building? building) {
+  Widget _shopRow(BuildContext context, Shop shop, NetBuilding? building) {
     final theme = Theme.of(context);
-    final catColor = AppPalette.categoryColor(shop.category.name);
-    final status = OpeningHours.parse(shop.hours).statusAt(DateTime.now());
+    final status = OpeningHours.parse(shop.hours).statusAt(calgaryNow());
 
     return InkWell(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (_) =>
-              ShopDetailSheet(shop: shop, buildingName: building?.name),
-        );
-      },
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(9),
-              decoration: BoxDecoration(
-                color: catColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Icon(_categoryIcon(shop.category),
-                  size: 18, color: catColor),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    shop.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  if (shop.description.isNotEmpty) ...[
-                    const SizedBox(height: 1),
+      onTap: () => showShopDetail(context, shop),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 64),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+          child: Row(
+            children: [
+              BrandLogo(shop: shop, size: 44),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      shop.description,
+                      shop.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      status.known ? status.label : shop.category.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: !status.known
+                            ? null
+                            : status.open
+                                ? AppPalette.origin
+                                : AppPalette.danger,
+                      ),
                     ),
                   ],
-                ],
-              ),
-            ),
-            if (status.known) ...[
-              const SizedBox(width: 8),
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: status.open
-                      ? AppPalette.origin
-                      : AppPalette.destination.withValues(alpha: 0.6),
                 ),
               ),
+              Icon(Icons.chevron_right_rounded,
+                  color: theme.colorScheme.onSurfaceVariant),
             ],
-            const SizedBox(width: 6),
-            Icon(Icons.chevron_right_rounded,
-                size: 18, color: theme.textTheme.bodySmall?.color),
-          ],
+          ),
         ),
       ),
     );
@@ -369,48 +334,22 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppPalette.brand.withValues(alpha: 0.10),
-              ),
-              child: const Icon(Icons.storefront_rounded,
-                  color: AppPalette.brand, size: 32),
-            ),
+            Icon(Icons.storefront_outlined,
+                size: 40, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(height: AppSpacing.lg),
             Text('Nothing matches', style: theme.textTheme.titleMedium),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Try a different name or clear the filters.',
+              _openNowOnly
+                  ? 'Only places with listed hours show under Open now. Try clearing the filter.'
+                  : 'Try a different name or clear the filters.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
           ],
         ),
       ),
     );
-  }
-
-  IconData _categoryIcon(ShopCategory c) {
-    switch (c) {
-      case ShopCategory.food:
-        return Icons.restaurant_rounded;
-      case ShopCategory.retail:
-        return Icons.shopping_bag_rounded;
-      case ShopCategory.services:
-        return Icons.business_center_rounded;
-      case ShopCategory.transit:
-        return Icons.tram_rounded;
-      case ShopCategory.washroom:
-        return Icons.wc_rounded;
-      case ShopCategory.hotel:
-        return Icons.hotel_rounded;
-      case ShopCategory.health:
-        return Icons.favorite_rounded;
-      case ShopCategory.entertainment:
-        return Icons.theaters_rounded;
-    }
   }
 }

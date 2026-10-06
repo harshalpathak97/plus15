@@ -1,11 +1,11 @@
 {
-    "name": "plus15_navigator",
-    "short_name": "plus15_navigator",
+    "name": "Plus15 Navigator",
+    "short_name": "+15",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FFFFFF",
+    "theme_color": "#FFFFFF",
+    "description": "Navigate Calgary's +15 skywalk network.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

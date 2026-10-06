@@ -5,16 +5,19 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
-import '../../../data/models/bridge.dart';
-import '../../../data/models/building.dart';
-import '../../../data/models/entry_point.dart';
+import '../../../routing/network.dart';
 import '../../../data/models/shop.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/widgets/app_pill.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/sheet_surface.dart';
+import '../../../routing/router.dart';
 import '../../route_planner/widgets/step_list.dart';
 import '../../shop_detail/shop_detail_sheet.dart';
+import '../../ai/widgets/ai_concierge_sheet.dart';
+import '../../transit/street_directions.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../shared/widgets/brand_logo.dart';
 import 'building_tooltip.dart';
 
 /// The single draggable sheet that anchors the bottom of the map.
@@ -25,19 +28,14 @@ import 'building_tooltip.dart';
 ///   • otherwise (idle)               → search prompt + quick routes
 ///
 /// It is a passive renderer: navigation logic stays on the map screen and is
-/// invoked through [onStopNavigation] / [onStartQuickRoute]. Entry-point
-/// guidance is plain map-screen state, passed down as props.
+/// invoked through [onStopNavigation] / [onStartQuickRoute].
 class MapBottomSheet extends ConsumerStatefulWidget {
-  final EntryPoint? guidanceEntryPoint;
-  final double? guidanceEntryDistanceM;
   final VoidCallback onStopNavigation;
   final void Function(String fromId, String toId, String mode)
       onStartQuickRoute;
 
   const MapBottomSheet({
     super.key,
-    required this.guidanceEntryPoint,
-    required this.guidanceEntryDistanceM,
     required this.onStopNavigation,
     required this.onStartQuickRoute,
   });
@@ -58,8 +56,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
   }
 
   _SheetMode _mode() {
-    final route = ref.read(activeRouteProvider);
-    if (route != null && route.length > 1) return _SheetMode.route;
+    if (ref.read(activeRouteProvider) != null) return _SheetMode.route;
     if (ref.read(selectedBuildingProvider) != null) return _SheetMode.building;
     return _SheetMode.idle;
   }
@@ -89,9 +86,6 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
     ref.listen(selectedBuildingProvider, (_, __) => _syncSize());
     ref.listen(activeRouteProvider, (_, __) => _syncSize());
 
-    final mediaBottom = MediaQuery.of(context).viewPadding.bottom;
-    final navClear =
-        AppDims.navBarHeight + (mediaBottom > 0 ? mediaBottom : 14) + 16;
 
     // Build the content here (during build) so the per-mode `ref.watch` calls
     // register correctly — never inside the sheet's deferred builder closure.
@@ -107,8 +101,8 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
       builder: (context, scrollController) {
         return SheetSurface(
           controller: scrollController,
-          padding: EdgeInsets.fromLTRB(
-              AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, navClear),
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, AppSpacing.xxl),
           children: children,
         );
       },
@@ -129,35 +123,45 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
   // --- Route + navigation ------------------------------------------------
   List<Widget> _routeContent(BuildContext context) {
     final route = ref.watch(activeRouteProvider);
-    final distance = ref.watch(activeRouteDistanceProvider);
     final session = ref.watch(navigationSessionProvider);
     final walkingSpeed = ref.watch(walkingSpeedProvider);
     final buildings =
-        ref.watch(buildingsProvider).valueOrNull ?? const <Building>[];
-    final bridges =
-        ref.watch(bridgesProvider).valueOrNull ?? const <Bridge>[];
-    if (route == null || route.length < 2) return const [];
+        ref.watch(buildingsProvider).valueOrNull ?? const <NetBuilding>[];
+    if (route == null) return const [];
 
     final buildingMap = {for (final b in buildings) b.id: b};
-    final fromName = buildingMap[route.first]?.name ?? route.first;
-    final toName = buildingMap[route.last]?.name ?? route.last;
+    final fromName = route.originBuildingId == null
+        ? 'My location'
+        : buildingMap[route.originBuildingId]?.name ?? route.originBuildingId!;
+    final toName =
+        buildingMap[route.destinationBuildingId]?.name ?? route.destinationBuildingId;
+    final distance = route.lengthM;
     final timeMin =
         AppConstants.estimateWalkTimeMinutes(distance, speedKmh: walkingSpeed);
 
     return [
       _routeSummary(context, fromName, toName, distance, timeMin,
-          route.length - 1),
+          route.bridgeCount),
+      if (route.previewOnly && !session.isActive) ...[
+        const SizedBox(height: AppSpacing.md),
+        PreviewBanner(route: route),
+      ],
       if (session.isActive) ...[
         const SizedBox(height: AppSpacing.md),
-        _navStatus(context, session, buildingMap),
+        _navStatus(context, session, route),
       ],
-      if (session.status == NavigationStatus.headingToEntry &&
-          widget.guidanceEntryPoint != null) ...[
-        const SizedBox(height: AppSpacing.sm),
-        _nearestEntryRow(context),
+      if (!session.isActive || session.stepIndex == 0) ...[
+        const SizedBox(height: AppSpacing.md),
+        WalkToEntranceCard(route: route),
       ],
+      const SizedBox(height: AppSpacing.md),
+      RouteNotices(route: route),
       const SizedBox(height: AppSpacing.xl),
-      StepList(path: route, buildings: buildings, bridges: bridges),
+      StepList(
+          route: route,
+          currentStep: session.isActive ? session.stepIndex : null,
+          showDebug: ref.watch(debugGraphProvider)),
+      if (ref.watch(debugGraphProvider)) RouteExplanation(route: route),
     ];
   }
 
@@ -167,13 +171,14 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(AppSpacing.sm),
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
-            color: AppPalette.brand,
+            color: theme.colorScheme.primaryContainer,
             borderRadius: AppRadii.rChip,
           ),
-          child: const Icon(Icons.navigation_rounded,
-              color: Colors.white, size: 20),
+          child: Icon(Icons.directions_walk_rounded,
+              color: theme.colorScheme.onPrimaryContainer),
         ),
         const SizedBox(width: AppSpacing.md),
         Expanded(
@@ -182,17 +187,18 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '$from → $to',
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
-                maxLines: 1,
+                to,
+                style: theme.textTheme.titleMedium,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 2),
               Text(
-                '${distance.toInt()} m · ~${timeMin.ceil()} min · '
-                '$bridges bridge${bridges == 1 ? '' : 's'}',
-                style: theme.textTheme.bodySmall,
+                '${timeMin.ceil()} min · ${distance.round()} m · from $from',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(fontFeatures: AppTheme.tabular),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -203,45 +209,39 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
             HapticFeedback.lightImpact();
             widget.onStopNavigation();
           },
-          tooltip: 'Stop',
-          icon: const Icon(Icons.close_rounded, size: 18),
+          tooltip: 'Close route',
+          icon: const Icon(Icons.close_rounded),
         ),
       ],
     );
   }
 
-  Widget _navStatus(BuildContext context, NavigationSession session,
-      Map<String, Building> buildingMap) {
+  Widget _navStatus(BuildContext context, NavigationSession session, PlannedRoute route) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final total = session.totalDistanceM <= 0 ? 1.0 : session.totalDistanceM;
     final progress =
         (1 - (session.remainingDistanceM / total)).clamp(0.0, 1.0);
-    final nextName = session.nextNodeId == null
-        ? null
-        : buildingMap[session.nextNodeId!]?.name ?? session.nextNodeId;
-    final destinationName = session.destinationId == null
-        ? null
-        : buildingMap[session.destinationId!]?.name ?? session.destinationId;
+    final step = route.steps[session.stepIndex.clamp(0, route.steps.length - 1)];
 
     final statusText = switch (session.status) {
-      NavigationStatus.headingToEntry => 'Heading to nearest entry',
-      NavigationStatus.rerouting => 'Re-routing on +15 network',
+      NavigationStatus.rerouting =>
+        'Off the route by ~${session.offRouteM.round()} m — re-routing',
       NavigationStatus.arrived => 'Arrived at destination',
-      NavigationStatus.onCourse => 'On course',
+      NavigationStatus.onCourse => '${session.remainingDistanceM.round()} m to go',
       NavigationStatus.inactive => 'Navigation inactive',
     };
     final accent = session.status == NavigationStatus.arrived
         ? AppPalette.origin
-        : AppPalette.brand;
+        : session.status == NavigationStatus.rerouting
+            ? AppPalette.warning
+            : AppPalette.brand;
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: (isDark ? Colors.white : AppPalette.brand)
-            .withValues(alpha: isDark ? 0.04 : 0.05),
-        borderRadius: AppRadii.rChip,
-        border: Border.all(color: accent.withValues(alpha: 0.18)),
+        color: theme.colorScheme.surface,
+        borderRadius: AppRadii.rCard,
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -256,12 +256,8 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(statusText,
-                    style: theme.textTheme.labelLarge
-                        ?.copyWith(fontWeight: FontWeight.w700)),
+                    style: theme.textTheme.labelLarge),
               ),
-              Text('${(session.confidence * 100).round()}% conf',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(fontWeight: FontWeight.w600)),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -269,50 +265,20 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
             value: progress,
             minHeight: 7,
             borderRadius: BorderRadius.circular(8),
-            backgroundColor: isDark
-                ? Colors.white.withValues(alpha: 0.12)
-                : Colors.black.withValues(alpha: 0.06),
+            backgroundColor: theme.colorScheme.surfaceContainerHigh,
             valueColor: AlwaysStoppedAnimation(accent),
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            nextName == null
-                ? (destinationName ?? 'Destination')
-                : 'Next: $nextName',
-            maxLines: 1,
+            step.text,
+            maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.titleSmall,
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _nearestEntryRow(BuildContext context) {
-    final theme = Theme.of(context);
-    final entry = widget.guidanceEntryPoint!;
-    final distanceM = (widget.guidanceEntryDistanceM ?? 0).round();
-    return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.sm + 2),
-      decoration: BoxDecoration(
-        color: AppPalette.origin.withValues(alpha: 0.10),
-        borderRadius: AppRadii.rChip,
-        border: Border.all(color: AppPalette.origin.withValues(alpha: 0.18)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.login_rounded, color: AppPalette.origin, size: 18),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              'Nearest entry: ${entry.name} ($distanceM m)',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
+          const SizedBox(height: 4),
+          Text(
+            'GPS is approximate indoors. Follow the +15 signs named in each step.',
+            style: theme.textTheme.bodySmall,
           ),
         ],
       ),
@@ -327,7 +293,6 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
 
     return [
       BuildingTooltip(
-        embedded: true,
         building: building,
         shops: shops,
         onNavigateHere: () {
@@ -344,98 +309,51 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
   // --- Idle --------------------------------------------------------------
   List<Widget> _idleContent(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final routines =
         ref.watch(savedRoutesProvider).where((r) => r.isRoutine).toList();
     final buildings =
-        ref.watch(buildingsProvider).valueOrNull ?? const <Building>[];
+        ref.watch(buildingsProvider).valueOrNull ?? const <NetBuilding>[];
     final buildingMap = {for (final b in buildings) b.id: b};
     final shops = ref.watch(shopsProvider).valueOrNull ?? const <Shop>[];
-    // "Featured" = verified businesses (those with a website on file), capped
-    // at 5 and clearly tagged — never injected into search ranking.
-    final featured =
-        shops.where((s) => s.website.trim().isNotEmpty).take(5).toList();
 
     return [
-      _searchPrompt(context),
-      const SizedBox(height: AppSpacing.xl),
-      const SectionHeader('Quick destinations'),
-      const SizedBox(height: AppSpacing.md),
+      Text('Explore the +15', style: theme.textTheme.titleLarge),
+      const SizedBox(height: 2),
+      Text('Calgary’s 16 km of heated skywalks, shops and food.',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      const SizedBox(height: AppSpacing.lg),
       _quickDestinations(context),
-      if (featured.isNotEmpty) ...[
-        const SizedBox(height: AppSpacing.xl),
-        const SectionHeader('Featured on the +15'),
-        const SizedBox(height: AppSpacing.md),
-        _featuredRow(context, featured, buildingMap),
-      ],
       const SizedBox(height: AppSpacing.xl),
-      const SectionHeader('Browse by category'),
+      const SectionHeader('Popular on the +15'),
       const SizedBox(height: AppSpacing.md),
-      _categoryGrid(context),
+      _popularBrands(context, shops),
+      const SizedBox(height: AppSpacing.xl),
+      _askAiCard(context),
       if (routines.isNotEmpty) ...[
         const SizedBox(height: AppSpacing.xl),
         const SectionHeader('Quick routes'),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.sm),
         ...routines.take(4).map((r) {
           final toName = buildingMap[r.toId]?.name ?? r.name;
           final fromName = buildingMap[r.fromId]?.name ?? r.fromId;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: Material(
-              color: isDark ? AppPalette.cardDark : AppPalette.surfaceLight,
-              borderRadius: AppRadii.rChip,
-              child: InkWell(
-                borderRadius: AppRadii.rChip,
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  widget.onStartQuickRoute(r.fromId, r.toId, r.routeType);
-                },
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.bolt_rounded,
-                          size: 18, color: AppPalette.warning),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(r.name,
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w700),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis),
-                            Text('$fromName → $toName',
-                                style: theme.textTheme.bodySmall,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.chevron_right_rounded,
-                          color: theme.textTheme.bodySmall?.color),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          return ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.bolt_rounded, color: theme.colorScheme.primary),
+            title: Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text('$fromName → $toName', maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              widget.onStartQuickRoute(r.fromId, r.toId, r.routeType);
+            },
           );
         }),
       ],
-      const SizedBox(height: AppSpacing.lg),
-      Center(
-        child: Text(
-          'Tap a building for details, or plan a route from the Navigate tab.',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodySmall,
-        ),
-      ),
     ];
   }
 
-  /// The downtown intents people actually have: a warm lunch, a washroom, the
-  /// CTrain, or shops. Each jumps into Search pre-filtered to that category.
+  /// The downtown intents people actually have. Each opens Search filtered.
   Widget _quickDestinations(BuildContext context) {
     return Wrap(
       runSpacing: AppSpacing.sm,
@@ -446,35 +364,30 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
             icon: Icons.restaurant_rounded,
             onTap: () => _goCategory('food')),
         AppPill(
+            label: 'Coffee',
+            selected: false,
+            icon: Icons.local_cafe_rounded,
+            onTap: () => _goQuery('coffee')),
+        AppPill(
             label: 'Washrooms',
             selected: false,
             icon: Icons.wc_rounded,
             onTap: () => _goCategory('washroom')),
         AppPill(
-            label: 'Transit',
+            label: 'Pharmacy & health',
             selected: false,
-            icon: Icons.train_rounded,
-            onTap: () => _goCategory('transit')),
+            icon: Icons.local_pharmacy_rounded,
+            onTap: () => _goCategory('health')),
         AppPill(
-            label: 'Shops',
+            label: 'Banks & services',
             selected: false,
-            icon: Icons.shopping_bag_rounded,
-            onTap: () => _goCategory('retail')),
-      ],
-    );
-  }
-
-  Widget _categoryGrid(BuildContext context) {
-    return Wrap(
-      runSpacing: AppSpacing.sm,
-      children: [
-        for (final c in ShopCategory.values)
-          AppPill(
-            label: c.label,
+            icon: Icons.account_balance_rounded,
+            onTap: () => _goCategory('services')),
+        AppPill(
+            label: 'Hotels',
             selected: false,
-            icon: _catIcon(c),
-            onTap: () => _goCategory(c.name),
-          ),
+            icon: Icons.hotel_rounded,
+            onTap: () => _goCategory('hotel')),
       ],
     );
   }
@@ -486,156 +399,98 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
     context.go('/search');
   }
 
-  Widget _featuredRow(BuildContext context, List<Shop> featured,
-      Map<String, Building> buildingMap) {
-    return SizedBox(
-      height: 116,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.zero,
-        itemCount: featured.length,
-        itemBuilder: (_, i) {
-          final shop = featured[i];
-          final bName = buildingMap[shop.buildingId]?.name ?? 'Plus 15';
-          return _featuredCard(context, shop, bName);
-        },
-      ),
-    );
+  void _goQuery(String q) {
+    HapticFeedback.selectionClick();
+    ref.read(selectedCategoryProvider.notifier).state = null;
+    ref.read(searchQueryProvider.notifier).state = q;
+    context.go('/search');
   }
 
-  Widget _featuredCard(BuildContext context, Shop shop, String buildingName) {
+  /// Brands with the most +15 locations, each opening Search for that brand.
+  Widget _popularBrands(BuildContext context, List<Shop> shops) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final color = AppPalette.categoryColor(shop.category.name);
-
-    return GestureDetector(
-      onTap: () => _showShopDetail(context, shop, buildingName),
-      child: Container(
-        width: 196,
-        margin: const EdgeInsets.only(right: AppSpacing.sm),
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          color: isDark ? AppPalette.cardDark : Colors.white,
-          borderRadius: AppRadii.rCard,
-          border: Border.all(
-              color: isDark ? AppPalette.borderDark : AppPalette.borderLight),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: AppRadii.rChip,
-                  ),
-                  child: Icon(_catIcon(shop.category), color: color, size: 18),
-                ),
-                const Spacer(),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppPalette.brand,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text('Featured',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.3)),
-                ),
-              ],
-            ),
-            const Spacer(),
-            Text(shop.name,
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-            Text(buildingName,
-                style: theme.textTheme.bodySmall,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showShopDetail(BuildContext context, Shop shop, String buildingName) {
-    HapticFeedback.lightImpact();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => ShopDetailSheet(shop: shop, buildingName: buildingName),
-    );
-  }
-
-  IconData _catIcon(ShopCategory cat) {
-    switch (cat) {
-      case ShopCategory.food:
-        return Icons.restaurant_rounded;
-      case ShopCategory.retail:
-        return Icons.shopping_bag_rounded;
-      case ShopCategory.services:
-        return Icons.business_center_rounded;
-      case ShopCategory.transit:
-        return Icons.train_rounded;
-      case ShopCategory.washroom:
-        return Icons.wc_rounded;
-      case ShopCategory.hotel:
-        return Icons.hotel_rounded;
-      case ShopCategory.health:
-        return Icons.local_hospital_rounded;
-      case ShopCategory.entertainment:
-        return Icons.theaters_rounded;
+    final byLogo = <String, List<Shop>>{};
+    for (final s in shops) {
+      if (s.logo != null && s.category != ShopCategory.washroom) {
+        byLogo.putIfAbsent(s.logo!, () => []).add(s);
+      }
     }
+    final brands = byLogo.values.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    return SizedBox(
+      height: 112,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: brands.length.clamp(0, 10),
+        separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.sm),
+        itemBuilder: (context, i) {
+          final group = brands[i];
+          final shop = group.first;
+          final name = shop.name.split(' - ').first;
+          return SizedBox(
+            width: 96,
+            child: Material(
+              color: theme.colorScheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: AppRadii.rCard,
+                side: BorderSide(color: theme.colorScheme.outlineVariant),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => group.length == 1 ? showShopDetail(context, shop) : _goQuery(name),
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  child: Column(
+                    children: [
+                      BrandLogo(shop: shop, size: 48),
+                      const SizedBox(height: 6),
+                      Text(name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium),
+                      Text(group.length == 1 ? '1 location' : '${group.length} locations',
+                          maxLines: 1,
+                          style: theme.textTheme.labelSmall),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
-  Widget _searchPrompt(BuildContext context) {
+  Widget _askAiCard(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
     return Material(
-      color: isDark ? AppPalette.cardDark : AppPalette.surfaceLight,
-      borderRadius: AppRadii.rControl,
+      color: scheme.primaryContainer,
+      borderRadius: AppRadii.rCard,
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: AppRadii.rControl,
-        onTap: () {
-          HapticFeedback.lightImpact();
-          context.go('/search');
-        },
+        onTap: () => showAiConcierge(context),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.md + 2),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(AppSpacing.sm),
-                decoration: BoxDecoration(
-                  color: AppPalette.brand,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.search_rounded,
-                    color: Colors.white, size: 18),
-              ),
+              Icon(Icons.auto_awesome_rounded, color: scheme.onPrimaryContainer),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Search the +15 network',
-                        style: theme.textTheme.titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w700)),
-                    Text('Shops, food, services and buildings',
-                        style: theme.textTheme.bodySmall),
+                    Text('Ask +15',
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(color: scheme.onPrimaryContainer)),
+                    Text('“Where’s coffee near Bankers Hall?” Powered by Kimi.',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: scheme.onPrimaryContainer)),
                   ],
                 ),
               ),
+              Icon(Icons.chevron_right_rounded, color: scheme.onPrimaryContainer),
             ],
           ),
         ),

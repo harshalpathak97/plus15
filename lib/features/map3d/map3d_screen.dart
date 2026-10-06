@@ -4,8 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:latlong2/latlong.dart' show LatLng;
 import '../../core/theme/app_palette.dart';
-import '../../data/models/building.dart';
+import '../../routing/network.dart';
 import '../../data/models/walkway_footprint.dart';
 import '../../shared/providers/providers.dart';
 import 'scene3d.dart';
@@ -40,6 +41,8 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
 
   _Mode _mode = _Mode.free;
   RoutePath3D? _routePath;
+  /// The route _routePath was built from; a reroute replaces it.
+  Object? _routeSource;
   double _t = 0; // progress along the route, 0..1
   bool _playing = true;
   bool _interacted = false;
@@ -202,15 +205,20 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
     final footprints =
         ref.watch(walkwayFootprintsProvider).valueOrNull ?? const [];
     final buildings =
-        ref.watch(buildingsProvider).valueOrNull ?? const <Building>[];
+        ref.watch(buildingsProvider).valueOrNull ?? const <NetBuilding>[];
 
-    // Pick the mode from app state on every build (cheap, idempotent).
-    final smoothed = ref.watch(smoothedRouteProvider);
+    // Pick the mode from app state on every build (cheap, idempotent). The
+    // 3D route is the routed edge geometry itself, rebuilt on reroute.
+    final route = ref.watch(activeRouteProvider);
+    final points = route == null
+        ? const <LatLng>[]
+        : [for (final p in route.geometry) LatLng(p[0], p[1])];
     final session = ref.watch(navigationSessionProvider);
-    final wantLive = session.isActive && smoothed.length >= 2;
-    final wantRoute = smoothed.length >= 2;
-    if (wantRoute && _routePath == null) {
-      final path = RoutePath3D.fromLatLng(smoothed);
+    final wantLive = session.isActive && points.length >= 2;
+    final wantRoute = points.length >= 2;
+    if (wantRoute && (_routePath == null || !identical(_routeSource, route))) {
+      _routeSource = route;
+      final path = RoutePath3D.fromLatLng(points);
       if (path.isUsable) _enterRouteMode(path, wantLive);
     } else if (wantLive && _mode == _Mode.flythrough) {
       _mode = _Mode.live;
@@ -218,7 +226,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
 
     return Scaffold(
       backgroundColor:
-          isDark ? const Color(0xFF080A14) : const Color(0xFFEEF1F7),
+          isDark ? const Color(0xFF0B0C0E) : const Color(0xFFEFEFEB),
       body: Stack(
         children: [
           Positioned.fill(
@@ -253,7 +261,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
     );
   }
 
-  List<Building> _labelBuildings(List<Building> all) {
+  List<NetBuilding> _labelBuildings(List<NetBuilding> all) {
     const ids = {
       'the_core', 'bankers_hall', 'suncor_energy_centre', 'bow_valley_square',
       'brookfield_place', 'stephen_ave_place', 'fifth_avenue_place',
@@ -305,7 +313,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
                       style: theme.textTheme.titleSmall
                           ?.copyWith(fontWeight: FontWeight.w800)),
                   Text(subtitle,
-                      style: theme.textTheme.bodySmall, maxLines: 1),
+                      style: theme.textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
@@ -333,8 +341,8 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
         customBorder: const CircleBorder(),
         onTap: onTap,
         child: SizedBox(
-          width: 42,
-          height: 42,
+          width: 48,
+          height: 48,
           child: Icon(icon,
               size: 20,
               color: isDark ? AppPalette.inkDark : AppPalette.ink),
@@ -501,7 +509,7 @@ class _Face {
 class _NetworkPainter extends CustomPainter {
   final OrbitCamera camera;
   final List<WalkwayFootprint> footprints;
-  final List<Building> labelBuildings;
+  final List<NetBuilding> labelBuildings;
   final RoutePath3D? routePath;
   final double? Function() progressT;
   final bool Function() showPuck;
@@ -568,7 +576,7 @@ class _NetworkPainter extends CustomPainter {
   void _paintGrid(Canvas canvas, CameraFrame frame) {
     const spacing = 150.0;
     const radius = 1200.0;
-    final color = isDark ? const Color(0xFF151A2A) : const Color(0xFFDDE2EE);
+    final color = isDark ? const Color(0xFF17191C) : const Color(0xFFE3E3DE);
     final paint = Paint()
       ..color = color
       ..strokeWidth = 1;
@@ -590,12 +598,12 @@ class _NetworkPainter extends CustomPainter {
 
   void _paintNetwork(Canvas canvas, CameraFrame frame) {
     // Theme-resolved flat fills. Bridges get the skywalk teal identity.
-    final topEnclosed = isDark ? const Color(0xFF252B45) : Colors.white;
+    final topEnclosed = isDark ? const Color(0xFF23262B) : Colors.white;
     final sideEnclosed =
-        isDark ? const Color(0xFF161A2C) : const Color(0xFFC7CCDD);
-    final topBridge = isDark ? const Color(0xFF11424C) : const Color(0xFFD7F1F5);
+        isDark ? const Color(0xFF15171A) : const Color(0xFFC9C8C2);
+    final topBridge = isDark ? const Color(0xFF2E3740) : const Color(0xFFDCE3E8);
     final sideBridge =
-        isDark ? const Color(0xFF0A2B32) : const Color(0xFF9CC8D1);
+        isDark ? const Color(0xFF1C2228) : const Color(0xFFA9B5BE);
     final bridgeEdge = (isDark ? AppPalette.skywalkBright : AppPalette.skywalk)
         .withValues(alpha: 0.55);
     final shadow = Colors.black.withValues(alpha: isDark ? 0.3 : 0.06);
@@ -784,7 +792,7 @@ class _NetworkPainter extends CustomPainter {
     final placed = <Rect>[];
 
     // Nearest labels win declutter priority.
-    final entries = <(double, Offset, Building)>[];
+    final entries = <(double, Offset, NetBuilding)>[];
     for (final b in labelBuildings) {
       final local = Scene3D.toLocal(b.lat, b.lng);
       final d = frame.depth(local.dx, local.dy, _roofZ);

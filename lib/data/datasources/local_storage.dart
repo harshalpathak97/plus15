@@ -5,11 +5,33 @@ import '../models/saved_route.dart';
 class LocalStorage {
   static const _routesBox = 'saved_routes';
   static const _prefsBox = 'preferences';
+  static const _placesBox = 'saved_places';
 
   Future<void> init() async {
     await Hive.initFlutter();
     await Hive.openBox<String>(_routesBox);
     await Hive.openBox<dynamic>(_prefsBox);
+    await Hive.openBox<String>(_placesBox);
+  }
+
+  /// 'light' (default) or 'dark'.
+  String getThemeMode() {
+    if (!Hive.isBoxOpen(_prefsBox)) return 'light';
+    return Hive.box<dynamic>(_prefsBox).get('themeMode', defaultValue: 'light') as String;
+  }
+
+  Future<void> setThemeMode(String mode) =>
+      Hive.box<dynamic>(_prefsBox).put('themeMode', mode);
+
+  /// Saved places (shop ids).
+  Set<String> getSavedPlaces() {
+    if (!Hive.isBoxOpen(_placesBox)) return {};
+    return Hive.box<String>(_placesBox).keys.cast<String>().toSet();
+  }
+
+  Future<void> setPlaceSaved(String shopId, bool saved) {
+    final box = Hive.box<String>(_placesBox);
+    return saved ? box.put(shopId, shopId) : box.delete(shopId);
   }
 
   List<SavedRoute> getSavedRoutes() {
@@ -52,6 +74,26 @@ class LocalStorage {
   Future<void> setAccessibilityMode(bool value) async {
     final box = Hive.box<dynamic>(_prefsBox);
     await box.put('accessibilityMode', value);
+  }
+
+  String? getBasemap() {
+    final box = Hive.box<dynamic>(_prefsBox);
+    return box.get('basemap') as String?;
+  }
+
+  Future<void> setBasemap(String name) async {
+    final box = Hive.box<dynamic>(_prefsBox);
+    await box.put('basemap', name);
+  }
+
+  bool getDebugGraph() {
+    final box = Hive.box<dynamic>(_prefsBox);
+    return box.get('debugGraph', defaultValue: false) as bool;
+  }
+
+  Future<void> setDebugGraph(bool value) async {
+    final box = Hive.box<dynamic>(_prefsBox);
+    await box.put('debugGraph', value);
   }
 
   bool getOnboardingComplete() {

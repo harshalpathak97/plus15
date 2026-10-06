@@ -20,9 +20,8 @@ class AppSpacing {
   /// Standard screen edge padding for the scrollable tabs.
   static const EdgeInsets screenPadding = EdgeInsets.fromLTRB(lg, lg, lg, 0);
 
-  /// Bottom padding for scrollable lists so content clears the floating nav
-  /// bar. Replaces the scattered hard-coded `108`.
-  static const double bottomScrollClearance = 108;
+  /// Bottom padding at the end of scrollable tab content.
+  static const double bottomScrollClearance = 24;
 }
 
 /// Corner radius tokens.
@@ -48,8 +47,11 @@ class AppRadii {
 class AppDims {
   AppDims._();
 
-  /// Floating glass nav bar pill height (matches [AppTheme] navigation theme).
-  static const double navBarHeight = 66;
+  /// Bottom navigation bar height (the theme's NavigationBar).
+  static const double navBarHeight = 68;
+
+  /// Minimum height of every button (≥ 48dp touch target).
+  static const double buttonHeight = 48;
 
   /// Square map control button (zoom / locate / recenter).
   static const double mapControlSize = 46;

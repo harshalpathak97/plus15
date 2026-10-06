@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/theme/app_spacing.dart';
+import '../../../core/theme/app_theme.dart';
 
+/// One route choice, full width so nothing truncates.
 class RouteOptionCard extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -9,6 +13,8 @@ class RouteOptionCard extends StatelessWidget {
   final double time;
   final bool isAccessible;
   final bool isSelected;
+  final bool previewOnly;
+  final String? badge;
   final VoidCallback onTap;
 
   const RouteOptionCard({
@@ -21,126 +27,74 @@ class RouteOptionCard extends StatelessWidget {
     required this.isAccessible,
     required this.isSelected,
     required this.onTap,
+    this.previewOnly = false,
+    this.badge,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    final secondaryOnSelected = Colors.white.withValues(alpha: 0.85);
-    final mutedColor = theme.textTheme.bodySmall?.color;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        width: 158,
-        padding: const EdgeInsets.all(14),
-        transform: isSelected
-            ? (Matrix4.identity()..scale(1.0))
-            : (Matrix4.identity()..scale(0.97)),
-        transformAlignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppPalette.brand
-              : (isDark ? AppPalette.cardDark : AppPalette.cardLight),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected
-                ? Colors.transparent
-                : (isDark ? AppPalette.borderDark : AppPalette.borderLight),
-            width: 1,
+    final scheme = theme.colorScheme;
+    final muted = scheme.onSurfaceVariant;
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: '$title, ${time.ceil()} minutes, ${distance.round()} metres',
+      child: Material(
+        color: isSelected ? scheme.primaryContainer.withValues(alpha: 0.5) : scheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadii.rCard,
+          side: BorderSide(
+            color: isSelected ? scheme.primary : scheme.outlineVariant,
+            width: isSelected ? 1.6 : 1,
           ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: AppPalette.brand.withValues(alpha: 0.35),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  )
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  )
-                ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? Colors.white.withValues(alpha: 0.18)
-                        : AppPalette.brand.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon,
-                      size: 18,
-                      color: isSelected ? Colors.white : AppPalette.brand),
-                ),
-                const SizedBox(width: 8),
+                Icon(icon, color: previewOnly ? muted : scheme.primary),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: isSelected ? Colors.white : null,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 2),
+                      Text(
+                        [
+                          '${distance.round()} m',
+                          '$bridges bridge${bridges == 1 ? '' : 's'}',
+                          if (isAccessible) 'step-free',
+                        ].join(' · '),
+                        style: theme.textTheme.bodySmall?.copyWith(fontFeatures: AppTheme.tabular),
+                      ),
+                      if (badge != null) ...[
+                        const SizedBox(height: 6),
+                        Text(badge!,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                                color: previewOnly ? AppPalette.danger : scheme.primary)),
+                      ],
+                    ],
                   ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Text.rich(
+                  TextSpan(children: [
+                    TextSpan(text: '${time.ceil()}', style: theme.textTheme.headlineSmall),
+                    TextSpan(text: ' min', style: theme.textTheme.bodySmall),
+                  ]),
+                  style: const TextStyle(fontFeatures: AppTheme.tabular),
                 ),
               ],
             ),
-            const Spacer(),
-            Text(
-              '${distance.toInt()}m · ~${time.ceil()} min',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: isSelected ? secondaryOnSelected : mutedColor,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Text(
-                  '$bridges bridges',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isSelected
-                        ? Colors.white.withValues(alpha: 0.7)
-                        : mutedColor,
-                  ),
-                ),
-                if (isAccessible) ...[
-                  const SizedBox(width: 6),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.white.withValues(alpha: 0.18)
-                          : AppPalette.origin.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Icon(Icons.accessible_rounded,
-                        size: 12,
-                        color: isSelected ? Colors.white : AppPalette.origin),
-                  ),
-                ],
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );

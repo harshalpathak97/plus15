@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../core/theme/app_palette.dart';
+import '../../core/theme/app_spacing.dart';
 
-/// A cohesive surface used across the app's lists and sections.
-///
-/// It's an opaque card (not a live blur — that's reserved for floating
-/// overlays so scrolling stays smooth) with a soft brand-tinted glow, a hairline
-/// border, and an optional flat accent bar on the leading edge.
+/// The app's flat card: theme surface, hairline border, no shadow stacking.
+/// An optional [accent] shows as a leading status bar inside the rounded
+/// shape (not clipped by it).
 class GlassCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -13,62 +11,54 @@ class GlassCard extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final double radius;
-
-  /// Optional accent color drawn as a thin bar down the left edge.
   final Color? accent;
 
   const GlassCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(14),
+    this.padding = const EdgeInsets.all(AppSpacing.lg),
     this.margin = EdgeInsets.zero,
     this.onTap,
     this.onLongPress,
-    this.radius = 18,
+    this.radius = AppRadii.card,
     this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? AppPalette.cardDark : AppPalette.cardLight;
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.07)
-        : AppPalette.borderLight;
-
-    final card = DecoratedBox(
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.22 : 0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            onLongPress: onLongPress,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: accent == null
-                    ? null
-                    : Border(left: BorderSide(color: accent!, width: 4)),
+    final scheme = Theme.of(context).colorScheme;
+    Widget content = Padding(padding: padding, child: child);
+    if (accent != null) {
+      content = IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 14, 0, 14),
+              child: Container(
+                width: 4,
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-              child: Padding(padding: padding, child: child),
             ),
-          ),
+            Expanded(child: content),
+          ],
         ),
+      );
+    }
+    return Padding(
+      padding: margin,
+      child: Material(
+        color: scheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radius),
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(onTap: onTap, onLongPress: onLongPress, child: content),
       ),
     );
-
-    return Padding(padding: margin, child: card);
   }
 }

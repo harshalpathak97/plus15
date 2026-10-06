@@ -41,7 +41,7 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final base = isDark ? AppPalette.cardDark : AppPalette.borderLight;
     final highlight =
-        isDark ? AppPalette.borderDark : const Color(0xFFF1F3F9);
+        isDark ? AppPalette.borderDark : const Color(0xFFEFEFEB);
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {

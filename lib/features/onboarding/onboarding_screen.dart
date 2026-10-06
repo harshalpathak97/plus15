@@ -4,7 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/theme/app_palette.dart';
+import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../shared/providers/providers.dart';
 
@@ -26,7 +26,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   static const _pages = [
     _OnboardPage(
-      icon: Icons.account_tree_rounded,
       title: 'The +15, finally easy',
       body:
           '16 km of skywalk. 100+ buildings. One calm map of the largest elevated '
@@ -36,15 +35,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       icon: Icons.navigation_rounded,
       title: 'Know exactly where to turn',
       body:
-          'Step-by-step guidance by named bridges and buildings — confident '
-          'wayfinding even four storeys up, and even when GPS is imperfect.',
+          'Step-by-step directions by named bridges and buildings, so you can '
+          'find your way four storeys up even when GPS drifts.',
     ),
     _OnboardPage(
       icon: Icons.my_location_rounded,
       title: 'Place yourself in the network',
       body:
-          'Turn on location so we can show where you are and guide you live. '
-          'While-in-use only — never in the background, never sold.',
+          'Turn on location to see where you are and get live guidance. '
+          'Only while you use the app. Never in the background, never sold.',
       isPermission: true,
     ),
   ];
@@ -92,20 +91,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final isLast = _page == _pages.length - 1;
 
     return Scaffold(
-      backgroundColor: AppPalette.surfaceDark,
       body: Stack(
         children: [
-          // Ambient brand glow behind everything.
-          Positioned(
-            top: -120,
-            right: -80,
-            child: _glow(AppPalette.brand, 320),
-          ),
-          Positioned(
-            bottom: -140,
-            left: -100,
-            child: _glow(AppPalette.skywalk, 360),
-          ),
           SafeArea(
             child: Column(
               children: [
@@ -116,8 +103,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     duration: AppMotion.fast,
                     child: TextButton(
                       onPressed: isLast ? null : _finish,
-                      child: const Text('Skip',
-                          style: TextStyle(color: Colors.white70)),
+                      child: const Text('Skip'),
                     ),
                   ),
                 ),
@@ -146,8 +132,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                             const SizedBox(height: AppSpacing.sm),
                             TextButton(
                               onPressed: _requesting ? null : _finish,
-                              child: const Text("Not now — I'll browse",
-                                  style: TextStyle(color: Colors.white70)),
+                              child: const Text('Not now, I’ll browse'),
                             ),
                           ],
                         )
@@ -161,16 +146,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     );
   }
 
-  Widget _glow(Color color, double size) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color.withValues(alpha: 0.10),
-      ),
-    );
-  }
 
   Widget _dots() {
     return Row(
@@ -183,7 +158,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             width: i == _page ? 26 : 8,
             height: 8,
             decoration: BoxDecoration(
-              color: i == _page ? AppPalette.brand : Colors.white24,
+              color: i == _page
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.outlineVariant,
               borderRadius: BorderRadius.circular(4),
             ),
           ),
@@ -191,49 +168,25 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     );
   }
 
-  Widget _primaryButton({required String label, required VoidCallback onTap}) {
-    return SizedBox(
-      width: double.infinity,
-      height: 54,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppPalette.brand,
-          borderRadius: AppRadii.rControl,
-          boxShadow: [
-            BoxShadow(
-              color: AppPalette.brand.withValues(alpha: 0.4),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
+  Widget _primaryButton({required String label, required VoidCallback onTap}) => SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          onPressed: onTap,
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
+          child: Text(label),
         ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: AppRadii.rControl,
-            onTap: onTap,
-            child: Center(
-              child: Text(label,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+      );
 }
 
 class _OnboardPage extends StatelessWidget {
-  final IconData icon;
+  /// Null shows the +15 logo mark.
+  final IconData? icon;
   final String title;
   final String body;
   final bool isPermission;
 
   const _OnboardPage({
-    required this.icon,
+    this.icon,
     required this.title,
     required this.body,
     this.isPermission = false,
@@ -241,6 +194,8 @@ class _OnboardPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
       child: Column(
@@ -251,35 +206,26 @@ class _OnboardPage extends StatelessWidget {
             width: 96,
             height: 96,
             decoration: BoxDecoration(
-              color: AppPalette.brand,
+              color: icon == null ? scheme.onSurface : scheme.primaryContainer,
               borderRadius: BorderRadius.circular(28),
-              boxShadow: [
-                BoxShadow(
-                  color: AppPalette.brand.withValues(alpha: 0.4),
-                  blurRadius: 28,
-                  offset: const Offset(0, 12),
-                ),
-              ],
             ),
-            child: Icon(icon, color: Colors.white, size: 44),
+            child: icon == null
+                ? Center(
+                    child: Image.asset(AppConstants.logoMark,
+                        width: 60, color: scheme.surface, semanticLabel: AppConstants.appName))
+                : Icon(icon, color: scheme.onPrimaryContainer, size: 44),
           )
               .animate()
               .scale(duration: AppMotion.slow, curve: Curves.easeOutBack),
           const SizedBox(height: AppSpacing.xxxl),
           Text(
             title,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 30,
-                fontWeight: FontWeight.w800,
-                height: 1.1,
-                letterSpacing: -0.5),
+            style: theme.textTheme.displayMedium,
           ).animate().fadeIn(duration: AppMotion.normal).slideY(begin: 0.15, end: 0),
           const SizedBox(height: AppSpacing.lg),
           Text(
             body,
-            style: const TextStyle(
-                color: Colors.white70, fontSize: 16, height: 1.5),
+            style: theme.textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
           )
               .animate()
               .fadeIn(duration: AppMotion.normal, delay: 80.ms)
@@ -288,15 +234,12 @@ class _OnboardPage extends StatelessWidget {
             const SizedBox(height: AppSpacing.xl),
             Row(
               children: [
-                const Icon(Icons.lock_outline_rounded,
-                    color: Colors.white38, size: 16),
+                Icon(Icons.lock_outline_rounded, color: scheme.onSurfaceVariant, size: 16),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'You can change this anytime in your device settings.',
-                    style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
-                        fontSize: 13),
+                    style: theme.textTheme.bodySmall,
                   ),
                 ),
               ],
