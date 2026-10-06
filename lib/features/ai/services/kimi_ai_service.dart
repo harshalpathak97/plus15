@@ -245,7 +245,7 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
         _update(
           id,
           (m) => m.copyWith(
-            text: text.toString().replaceFirst(_trailingTag, ''),
+            text: AiMessage.plain(text.toString().replaceFirst(_trailingTag, '')),
             reasoning: reasoning.toString(),
             queued: false,
           ),

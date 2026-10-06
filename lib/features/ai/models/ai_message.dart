@@ -109,7 +109,7 @@ class AiMessage {
     }
     final focus = focusRegex.firstMatch(msg.text);
     // Drop every tag, including ones too malformed to act on.
-    final text = msg.text.replaceAll(_anyTag, '').trim();
+    final text = plain(msg.text.replaceAll(_anyTag, '')).trim();
     if (unique.isNotEmpty) {
       return msg.copyWith(
         text: text,
@@ -127,6 +127,12 @@ class AiMessage {
   }
 
   static final _anyTag = RegExp(r'\[ACTION:[^\]]*\]?', caseSensitive: false);
+
+  /// Models sometimes answer in markdown despite the prompt; the chat shows
+  /// plain text, so drop bold/italic markers and heading hashes.
+  static String plain(String s) => s
+      .replaceAll(RegExp(r'\*\*|__'), '')
+      .replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '');
 
   /// `|from=A|to=B` → {from: A, to: B}; keys lower-cased, values trimmed.
   static Map<String, String> _fields(String s) => {
