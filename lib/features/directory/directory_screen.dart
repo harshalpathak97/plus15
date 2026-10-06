@@ -60,7 +60,12 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
         bottom: false,
         child: shopsAsync.when(
           loading: () => const ShimmerList(count: 8),
-          error: (_, __) => const Center(child: Text('Couldn\'t load places')),
+          error: (_, __) => Center(
+            child: TextButton(
+              onPressed: () => ref.invalidate(shopsProvider),
+              child: const Text("Couldn't load places. Try again"),
+            ),
+          ),
           data: (shops) => _buildBody(context, shops, buildingMap),
         ),
       ),
@@ -176,6 +181,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
         suffixIcon: _query.isEmpty
             ? null
             : IconButton(
+                tooltip: 'Clear search',
                 icon: const Icon(Icons.close_rounded, size: 18),
                 onPressed: () {
                   _searchController.clear();
@@ -188,11 +194,11 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
   }
 
   Widget _filterRow(BuildContext context) {
-    return SizedBox(
-      height: 48,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 6),
+    // Grows with the text size instead of clipping it.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 6),
+      child: Row(
         children: [
           AppPill(
             label: 'All',
@@ -310,7 +316,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                         color: !status.known
                             ? null
                             : status.open
-                                ? AppPalette.origin
+                                ? AppPalette.openText(theme.brightness)
                                 : AppPalette.danger,
                       ),
                     ),

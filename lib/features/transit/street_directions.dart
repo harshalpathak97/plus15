@@ -5,6 +5,7 @@ import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../routing/network.dart';
 import '../../routing/router.dart';
+import '../../shared/widgets/button_row.dart';
 
 enum StreetMode {
   transit('transit', 'r', 'Transit', Icons.directions_transit_rounded),
@@ -44,19 +45,15 @@ class StreetDirectionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return ButtonRow(
       children: [
-        for (final m in StreetMode.values) ...[
-          if (m != StreetMode.values.first) const SizedBox(width: 8),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () => openStreetDirections(context, building, m),
-              icon: Icon(m.icon, size: 18),
-              label: Text(m.label, maxLines: 1, overflow: TextOverflow.ellipsis),
-              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
-            ),
+        for (final m in StreetMode.values)
+          OutlinedButton.icon(
+            onPressed: () => openStreetDirections(context, building, m),
+            icon: Icon(m.icon, size: 18),
+            label: Text(m.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
           ),
-        ],
       ],
     );
   }

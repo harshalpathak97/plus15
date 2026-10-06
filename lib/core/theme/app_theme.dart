@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'app_palette.dart';
 import 'app_spacing.dart';
@@ -15,12 +14,9 @@ import 'app_spacing.dart';
 class AppTheme {
   AppTheme._();
 
-  static final bool _apple = !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS);
-  /// SF Pro Display (≥ 20 pt) and SF Pro Text on Apple platforms, else Inter.
-  static final display = _apple ? 'CupertinoSystemDisplay' : 'Inter';
-  static final body = _apple ? 'CupertinoSystemText' : 'Inter';
+  /// The bundled Inter everywhere, so the app looks the same on every device.
+  static const display = 'Inter';
+  static const body = 'Inter';
   static const _fallback = ['Inter'];
 
   static final light = _build(Brightness.light);
@@ -263,8 +259,8 @@ class AppTheme {
     );
   }
 
-  /// Tracking for SF Pro (Apple's published values) or for Inter.
-  static double t(double sf, double inter) => _apple ? sf : inter;
+  /// Inter tracking (the first value was SF Pro's, kept for reference).
+  static double t(double sf, double inter) => inter;
 
   static TextTheme _textTheme(Color ink, Color muted) {
     TextStyle s(String family, double size, FontWeight w, double height,

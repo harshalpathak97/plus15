@@ -89,11 +89,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ],
               ),
             ),
-            SizedBox(
-              height: 48,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 6, AppSpacing.lg, 6),
+            // Grows with the text size instead of clipping it.
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 6, AppSpacing.lg, 6),
+              child: Row(
                 children: [
                   AppPill(
                     label: 'Open now',
@@ -112,6 +112,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     ShopCategory.retail,
                     ShopCategory.services,
                     ShopCategory.health,
+                    ShopCategory.entertainment,
                     ShopCategory.hotel,
                     ShopCategory.washroom,
                   ])
@@ -259,7 +260,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             TextSpan(
               text: status.open ? 'Open · ' : 'Closed · ',
               style: TextStyle(
-                  color: status.open ? AppPalette.origin : AppPalette.danger,
+                  color: status.open
+                      ? AppPalette.openText(Theme.of(context).brightness)
+                      : AppPalette.danger,
                   fontWeight: FontWeight.w600),
             ),
           TextSpan(text: b?.name ?? s.category.label, style: TextStyle(color: muted)),

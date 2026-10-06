@@ -107,7 +107,12 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
         bottom: false,
         child: buildingsAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => const Center(child: Text('Couldn’t load the +15 network.')),
+          error: (e, _) => Center(
+            child: TextButton(
+              onPressed: () => ref.invalidate(networkProvider),
+              child: const Text('Couldn’t load the +15 network. Try again'),
+            ),
+          ),
           data: (buildings) => ListView(
             padding: const EdgeInsets.fromLTRB(
                 AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.bottomScrollClearance),

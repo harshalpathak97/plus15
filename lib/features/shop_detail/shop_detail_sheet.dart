@@ -12,6 +12,7 @@ import '../../routing/network.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/brand_logo.dart';
 import '../transit/street_directions.dart';
+import '../../shared/widgets/button_row.dart';
 
 /// Opens the business detail sheet over everything (root navigator).
 Future<void> showShopDetail(BuildContext context, Shop shop) {
@@ -85,39 +86,29 @@ class ShopDetailSheet extends ConsumerWidget {
             label: const Text('Directions through the +15'),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Row(
+          ButtonRow(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    ref.read(savedPlacesProvider.notifier).toggle(shop.id);
-                  },
-                  icon: Icon(saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded),
-                  label: Text(saved ? 'Saved' : 'Save'),
-                ),
+              OutlinedButton.icon(
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  ref.read(savedPlacesProvider.notifier).toggle(shop.id);
+                },
+                icon: Icon(saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded),
+                label: Text(saved ? 'Saved' : 'Save'),
               ),
-              if (hasPhone) ...[
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _launch(
-                        context, Uri(scheme: 'tel', path: shop.phone.replaceAll(RegExp(r'[^0-9+]'), ''))),
-                    icon: const Icon(Icons.call_rounded),
-                    label: const Text('Call'),
-                  ),
+              if (hasPhone)
+                OutlinedButton.icon(
+                  onPressed: () => _launch(
+                      context, Uri(scheme: 'tel', path: shop.phone.replaceAll(RegExp(r'[^0-9+]'), ''))),
+                  icon: const Icon(Icons.call_rounded),
+                  label: const Text('Call'),
                 ),
-              ],
-              if (hasWeb) ...[
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _launch(context, Uri.parse(shop.website.trim())),
-                    icon: const Icon(Icons.public_rounded),
-                    label: const Text('Website'),
-                  ),
+              if (hasWeb)
+                OutlinedButton.icon(
+                  onPressed: () => _launch(context, Uri.parse(shop.website.trim())),
+                  icon: const Icon(Icons.public_rounded),
+                  label: const Text('Website'),
                 ),
-              ],
             ],
           ),
           if (shop.description.isNotEmpty) ...[
@@ -184,7 +175,7 @@ class _StatusLine extends StatelessWidget {
     final color = !status.known
         ? theme.colorScheme.onSurfaceVariant
         : status.open
-            ? AppPalette.origin
+            ? AppPalette.openText(theme.brightness)
             : AppPalette.danger;
     return Row(
       children: [

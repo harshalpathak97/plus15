@@ -39,7 +39,15 @@ class RouteOptionCard extends StatelessWidget {
     return Semantics(
       button: true,
       selected: isSelected,
-      label: '$title, ${time.ceil()} minutes, ${distance.round()} metres',
+      excludeSemantics: true, // read once, as this label
+      onTap: onTap,
+      label: [
+        title,
+        if (badge != null) badge!,
+        '${time.ceil()} minutes, ${distance.round()} metres, $bridges bridges',
+        if (isAccessible) 'step-free',
+        if (previewOnly) 'preview only',
+      ].join(', '),
       child: Material(
         color: isSelected ? scheme.primaryContainer.withValues(alpha: 0.5) : scheme.surface,
         shape: RoundedRectangleBorder(

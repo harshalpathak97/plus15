@@ -257,89 +257,94 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                 );
             return Stack(
               children: [
-                FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: _calgaryCenter,
-                    initialZoom: _defaultZoom,
-                    minZoom: 10,
-                    maxZoom: 19,
-                    cameraConstraint: CameraConstraint.contain(bounds: _calgaryBounds),
-                    onMapReady: () {
-                      _mapReady = true;
-                      // A route set before the map existed gets framed now.
-                      final r = ref.read(activeRouteProvider);
-                      if (r != null) {
-                        _presentedRoute = r;
-                        _presentRoute(r);
-                        return;
-                      }
-                      final loc = displayUserLocation;
-                      if (loc != null && _isInCalgaryBounds(loc.latitude, loc.longitude)) {
-                        _animatedMove(loc, 16.0);
-                      }
-                    },
-                    onPositionChanged: (pos, _) {
-                      if (pos.zoom != _currentZoom) {
-                        setState(() => _currentZoom = pos.zoom);
-                      }
-                    },
-                    onTap: (_, __) {
-                      ref.read(selectedBuildingProvider.notifier).state = null;
-                    },
-                    interactionOptions: const InteractionOptions(
-                      flags: InteractiveFlag.all,
+                // Map labels live in fixed-size markers; cap their growth so
+                // large system text doesn't clip them (the rest of the UI scales).
+                MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.15,
+                  child: FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: _calgaryCenter,
+                      initialZoom: _defaultZoom,
+                      minZoom: 10,
+                      maxZoom: 19,
+                      cameraConstraint: CameraConstraint.contain(bounds: _calgaryBounds),
+                      onMapReady: () {
+                        _mapReady = true;
+                        // A route set before the map existed gets framed now.
+                        final r = ref.read(activeRouteProvider);
+                        if (r != null) {
+                          _presentedRoute = r;
+                          _presentRoute(r);
+                          return;
+                        }
+                        final loc = displayUserLocation;
+                        if (loc != null && _isInCalgaryBounds(loc.latitude, loc.longitude)) {
+                          _animatedMove(loc, 16.0);
+                        }
+                      },
+                      onPositionChanged: (pos, _) {
+                        if (pos.zoom != _currentZoom) {
+                          setState(() => _currentZoom = pos.zoom);
+                        }
+                      },
+                      onTap: (_, __) {
+                        ref.read(selectedBuildingProvider.notifier).state = null;
+                      },
+                      interactionOptions: const InteractionOptions(
+                        flags: InteractiveFlag.all,
+                      ),
                     ),
-                  ),
-                  children: [
-                    TileLayer(
-                      // Keyless Esri basemaps (CARTO now watermarks "API KEY
-                      // REQUIRED"); style chosen with the layers control.
-                      key: ValueKey('${basemap.name}-$isDark'),
-                      urlTemplate: basemap.url(isDark),
-                      userAgentPackageName: 'com.plus15.plus15_navigator',
-                      maxNativeZoom: basemap.maxNativeZoom,
-                      maxZoom: 20,
-                      tileDisplay: const TileDisplay.fadeIn(),
-                      fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    ),
-                    // Display layer: the City's +15 walkway footprints.
-                    ...networkLayers(network,
-                        closedBridges: closedBridges, zoom: _currentZoom, isDark: darkSurface),
-                    if (debugGraph)
-                      GraphDebugLayer(
-                          network: network, closedEdges: closedEdges, zoom: _currentZoom),
-                    // The route exactly as routed (graph edge geometry).
-                    if (activeRoute != null)
-                      AnimatedBuilder(
-                        animation: _routeReveal,
-                        builder: (context, _) => Stack(
-                          children: routeLayers(activeRoute,
-                              isDark: darkSurface,
-                              reveal: Curves.easeInOutCubic.transform(_routeReveal.value)),
+                    children: [
+                      TileLayer(
+                        // Keyless Esri basemaps (CARTO now watermarks "API KEY
+                        // REQUIRED"); style chosen with the layers control.
+                        key: ValueKey('${basemap.name}-$isDark'),
+                        urlTemplate: basemap.url(isDark),
+                        userAgentPackageName: 'com.plus15.plus15_navigator',
+                        maxNativeZoom: basemap.maxNativeZoom,
+                        maxZoom: 20,
+                        tileDisplay: const TileDisplay.fadeIn(),
+                        fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      ),
+                      // Display layer: the City's +15 walkway footprints.
+                      ...networkLayers(network,
+                          closedBridges: closedBridges, zoom: _currentZoom, isDark: darkSurface),
+                      if (debugGraph)
+                        GraphDebugLayer(
+                            network: network, closedEdges: closedEdges, zoom: _currentZoom),
+                      // The route exactly as routed (graph edge geometry).
+                      if (activeRoute != null)
+                        AnimatedBuilder(
+                          animation: _routeReveal,
+                          builder: (context, _) => Stack(
+                            children: routeLayers(activeRoute,
+                                isDark: darkSurface,
+                                reveal: Curves.easeInOutCubic.transform(_routeReveal.value)),
+                          ),
                         ),
-                      ),
-                    // Building markers step aside while a route is shown so the
-                    // route reads first; the sheet names both ends.
-                    if (_currentZoom >= 13.5 && !debugGraph && activeRoute == null)
-                      MarkerLayer(
-                        markers: _buildMarkers(
-                            visibleBuildings, selectedBuilding, routeBuildings, isDark),
-                      ),
-                    if (activeRoute == null && _currentZoom >= 17 && !debugGraph)
-                      MarkerLayer(markers: doorMarkers(network, isDark: darkSurface)),
-                    if (activeRoute != null && activeRoute.hops.isNotEmpty)
-                      MarkerLayer(
-                        markers: [
-                          ..._buildRouteEndpoints(activeRoute, arrived),
-                          ...routeDoorMarkers(activeRoute, network),
-                        ],
-                      ),
-                    if (displayUserLocation != null)
-                      MarkerLayer(
-                        markers: [_buildUserLocationMarker(displayUserLocation)],
-                      ),
-                  ],
+                      // Building markers step aside while a route is shown so the
+                      // route reads first; the sheet names both ends.
+                      if (_currentZoom >= 13.5 && !debugGraph && activeRoute == null)
+                        MarkerLayer(
+                          markers: _buildMarkers(
+                              visibleBuildings, selectedBuilding, routeBuildings, isDark),
+                        ),
+                      if (activeRoute == null && _currentZoom >= 17 && !debugGraph)
+                        MarkerLayer(markers: doorMarkers(network, isDark: darkSurface)),
+                      if (activeRoute != null && activeRoute.hops.isNotEmpty)
+                        MarkerLayer(
+                          markers: [
+                            ..._buildRouteEndpoints(activeRoute, arrived),
+                            ...routeDoorMarkers(activeRoute, network),
+                          ],
+                        ),
+                      if (displayUserLocation != null)
+                        MarkerLayer(
+                          markers: [_buildUserLocationMarker(displayUserLocation)],
+                        ),
+                    ],
+                  ),
                 ),
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 12,
@@ -582,14 +587,18 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       child:
           Icon(arrived ? Icons.check_rounded : Icons.flag_rounded, size: 15, color: Colors.white),
     );
-    endPin = arrived
+    final still = MediaQuery.disableAnimationsOf(context);
+    endPin = still
         ? endPin
-            .animate(onPlay: (c) => c.repeat(reverse: true))
-            .scaleXY(begin: 1.0, end: 1.08, duration: 900.ms, curve: Curves.easeInOut)
-        : endPin
-            .animate(key: ValueKey(route))
-            .scaleXY(begin: 0.4, end: 1, delay: 850.ms, duration: 380.ms, curve: Curves.easeOutBack)
-            .fadeIn(delay: 850.ms, duration: 200.ms);
+        : arrived
+            ? endPin
+                .animate(onPlay: (c) => c.repeat(reverse: true))
+                .scaleXY(begin: 1.0, end: 1.08, duration: 900.ms, curve: Curves.easeInOut)
+            : endPin
+                .animate(key: ValueKey(route))
+                .scaleXY(
+                    begin: 0.4, end: 1, delay: 850.ms, duration: 380.ms, curve: Curves.easeOutBack)
+                .fadeIn(delay: 850.ms, duration: 200.ms);
     return [
       Marker(point: start, width: 22, height: 22, child: startDot),
       Marker(point: end, width: 34, height: 34, child: endPin),
@@ -618,34 +627,45 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           point: LatLng(b.lat, b.lng),
           width: isSelected ? 190 : 150,
           height: 36,
-          child: GestureDetector(
-            onTap: () {
-              HapticFeedback.lightImpact();
-              ref.read(selectedBuildingProvider.notifier).state = b;
-              _animatedMove(LatLng(b.lat, b.lng), _mapController.camera.zoom);
-            },
-            child: _BuildingChip(
-              name: b.name,
-              isSelected: isSelected,
-              isOnRoute: isOnRoute,
-              type: b.type,
-              hasFood: b.amenities.contains('food'),
+          child: Semantics(
+            button: true,
+            label: b.name,
+            excludeSemantics: true,
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                ref.read(selectedBuildingProvider.notifier).state = b;
+                _animatedMove(LatLng(b.lat, b.lng), _mapController.camera.zoom);
+              },
+              child: _BuildingChip(
+                name: b.name,
+                isSelected: isSelected,
+                isOnRoute: isOnRoute,
+                type: b.type,
+                hasFood: b.amenities.contains('food'),
+              ),
             ),
           ),
         );
       }
 
+      // A 12 px dot with a 44 px touch area.
       return Marker(
         point: LatLng(b.lat, b.lng),
-        width: 28,
-        height: 28,
-        child: GestureDetector(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            ref.read(selectedBuildingProvider.notifier).state = b;
-            _animatedMove(LatLng(b.lat, b.lng), 16.0);
-          },
-          child: _BuildingDot(type: b.type, hasFood: b.amenities.contains('food')),
+        width: 44,
+        height: 44,
+        child: Semantics(
+          button: true,
+          label: b.name,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              HapticFeedback.lightImpact();
+              ref.read(selectedBuildingProvider.notifier).state = b;
+              _animatedMove(LatLng(b.lat, b.lng), 16.0);
+            },
+            child: _BuildingDot(type: b.type, hasFood: b.amenities.contains('food')),
+          ),
         ),
       );
     }).toList();
@@ -784,8 +804,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         const SizedBox(height: AppSpacing.sm),
         // The primary way to find a place, with Ask +15 alongside.
         _FloatingSurface(
-          child: SizedBox(
-            height: 52,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 52),
             child: Row(
               children: [
                 Expanded(
@@ -795,7 +815,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       context.go('/search');
                     },
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 14),
                       child: Row(
                         children: [
                           Icon(Icons.search_rounded, color: muted),
@@ -843,6 +863,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     final theme = Theme.of(context);
     final open = status?.open ?? true;
     final statusColor = open ? AppPalette.origin : AppPalette.danger;
+    final dark = theme.brightness == Brightness.dark;
+    final statusText = open && !dark ? AppPalette.originText : statusColor;
     return _FloatingSurface(
       child: InkWell(
         onTap: () => context.push('/alerts'),
@@ -860,14 +882,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                   children: [
                     Text(
                       status == null ? '+15 network' : status.label,
-                      style: theme.textTheme.labelMedium?.copyWith(color: statusColor),
-                      maxLines: 1,
+                      style: theme.textTheme.labelMedium?.copyWith(color: statusText),
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       nearest ?? (locationOff ? 'Downtown Calgary' : 'Finding your location…'),
                       style: theme.textTheme.titleSmall,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -1013,7 +1035,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     if (route == null || fromId == null || fromId == route.destinationBuildingId) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("This trip has no start building to save. Plan it in Navigate to save it.")));
+            content:
+                Text("This trip has no start building to save. Plan it in Navigate to save it.")));
       }
       _stopNavigation();
       return;
@@ -1228,7 +1251,18 @@ class _PulsingLocationDotState extends State<_PulsingLocationDot>
     _controller = AnimationController(
       duration: const Duration(milliseconds: 2000),
       vsync: this,
-    )..repeat();
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // "Remove animations" in system settings: hold a still ring instead.
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = 0.5;
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
   }
 
   @override

@@ -27,8 +27,7 @@ class Map3DScreen extends ConsumerStatefulWidget {
 
 enum _Mode { free, flythrough, live }
 
-class _Map3DScreenState extends ConsumerState<Map3DScreen>
-    with SingleTickerProviderStateMixin {
+class _Map3DScreenState extends ConsumerState<Map3DScreen> with SingleTickerProviderStateMixin {
   late final AnimationController _ticker;
   Duration _lastElapsed = Duration.zero;
 
@@ -41,6 +40,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
 
   _Mode _mode = _Mode.free;
   RoutePath3D? _routePath;
+
   /// The route _routePath was built from; a reroute replaces it.
   Object? _routeSource;
   double _t = 0; // progress along the route, 0..1
@@ -111,8 +111,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
         if (path == null) break;
         final session = ref.read(navigationSessionProvider);
         if (session.totalDistanceM > 0) {
-          _liveT = (1 - session.remainingDistanceM / session.totalDistanceM)
-              .clamp(0.0, 1.0);
+          _liveT = (1 - session.remainingDistanceM / session.totalDistanceM).clamp(0.0, 1.0);
         }
         // Glide toward the live position.
         _t += (_liveT - _t) * math.min(1.0, dt * 2.0);
@@ -127,8 +126,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
     _camera.target = Offset.lerp(_camera.target, p, ease)!;
     _camera.targetZ += (6.0 - _camera.targetZ) * ease;
     if (!_interacted) {
-      _camera.yaw =
-          lerpAngle(_camera.yaw, path.headingAt(_t), math.min(1.0, dt * 2.2));
+      _camera.yaw = lerpAngle(_camera.yaw, path.headingAt(_t), math.min(1.0, dt * 2.2));
     }
   }
 
@@ -144,8 +142,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
     if (live) {
       final session = ref.read(navigationSessionProvider);
       if (session.totalDistanceM > 0) {
-        _t = (1 - session.remainingDistanceM / session.totalDistanceM)
-            .clamp(0.0, 1.0);
+        _t = (1 - session.remainingDistanceM / session.totalDistanceM).clamp(0.0, 1.0);
         _liveT = _t;
         _camera.target = path.pointAt(_t);
       }
@@ -218,17 +215,14 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final footprints =
-        ref.watch(walkwayFootprintsProvider).valueOrNull ?? const [];
-    final buildings =
-        ref.watch(buildingsProvider).valueOrNull ?? const <NetBuilding>[];
+    final footprints = ref.watch(walkwayFootprintsProvider).valueOrNull ?? const [];
+    final buildings = ref.watch(buildingsProvider).valueOrNull ?? const <NetBuilding>[];
 
     // Pick the mode from app state on every build (cheap, idempotent). The
     // 3D route is the routed edge geometry itself, rebuilt on reroute.
     final route = ref.watch(activeRouteProvider);
-    final points = route == null
-        ? const <LatLng>[]
-        : [for (final p in route.geometry) LatLng(p[0], p[1])];
+    final points =
+        route == null ? const <LatLng>[] : [for (final p in route.geometry) LatLng(p[0], p[1])];
     final session = ref.watch(navigationSessionProvider);
     final wantLive = session.isActive && points.length >= 2;
     final wantRoute = points.length >= 2;
@@ -250,8 +244,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
     }
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0B0C0E) : const Color(0xFFEFEFEB),
+      backgroundColor: isDark ? const Color(0xFF0B0C0E) : const Color(0xFFEFEFEB),
       body: Stack(
         children: [
           Positioned.fill(
@@ -278,8 +271,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           ),
           _topBar(context, theme, isDark),
           if (_showHint) _hint(theme, isDark),
-          if (_mode == _Mode.flythrough && _routePath != null)
-            _flythroughControls(theme, isDark),
+          if (_mode == _Mode.flythrough && _routePath != null) _flythroughControls(theme, isDark),
           if (_mode == _Mode.live) _liveBadge(theme, isDark),
         ],
       ),
@@ -288,18 +280,30 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
 
   List<NetBuilding> _labelBuildings(List<NetBuilding> all) {
     const ids = {
-      'the_core', 'bankers_hall', 'suncor_energy_centre', 'bow_valley_square',
-      'brookfield_place', 'stephen_ave_place', 'fifth_avenue_place',
-      'gulf_canada_square', 'eighth_avenue_place', 'city_hall',
-      'calgary_tower', 'glenbow_museum', 'arts_commons', 'the_bow',
-      'eau_claire_tower', 'hudsons_bay', 'palliser_hotel', 'centennial_place',
+      'the_core',
+      'bankers_hall',
+      'suncor_energy_centre',
+      'bow_valley_square',
+      'brookfield_place',
+      'stephen_ave_place',
+      'fifth_avenue_place',
+      'gulf_canada_square',
+      'eighth_avenue_place',
+      'city_hall',
+      'calgary_tower',
+      'glenbow_museum',
+      'arts_commons',
+      'the_bow',
+      'eau_claire_tower',
+      'hudsons_bay',
+      'palliser_hotel',
+      'centennial_place',
     };
     return all.where((b) => ids.contains(b.id)).toList(growable: false);
   }
 
   Widget _topBar(BuildContext context, ThemeData theme, bool isDark) {
-    final surface =
-        (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.9);
+    final surface = (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.9);
     final subtitle = switch (_mode) {
       _Mode.free => 'The whole network, 15 feet up',
       _Mode.flythrough => 'Route fly-through',
@@ -314,6 +318,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           _roundButton(
             isDark,
             icon: Icons.arrow_back_rounded,
+            tooltip: 'Back',
             onTap: () => context.pop(),
           ),
           const SizedBox(width: 10),
@@ -335,10 +340,11 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('+15 in 3D',
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w800)),
+                      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
                   Text(subtitle,
-                      style: theme.textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      style: theme.textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
@@ -347,6 +353,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           _roundButton(
             isDark,
             icon: Icons.center_focus_strong_rounded,
+            tooltip: 'Reset view',
             onTap: _resetCamera,
           ),
         ],
@@ -355,22 +362,22 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
   }
 
   Widget _roundButton(bool isDark,
-      {required IconData icon, required VoidCallback onTap}) {
-    return Material(
-      color: (isDark ? AppPalette.cardDark : Colors.white)
-          .withValues(alpha: 0.9),
-      shape: const CircleBorder(),
-      elevation: 2,
-      shadowColor: Colors.black38,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 48,
-          height: 48,
-          child: Icon(icon,
-              size: 20,
-              color: isDark ? AppPalette.inkDark : AppPalette.ink),
+      {required IconData icon, required String tooltip, required VoidCallback onTap}) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.9),
+        shape: const CircleBorder(),
+        elevation: 2,
+        shadowColor: Colors.black38,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: Icon(icon, size: 20, color: isDark ? AppPalette.inkDark : AppPalette.ink),
+          ),
         ),
       ),
     );
@@ -386,8 +393,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: (isDark ? AppPalette.cardDark : Colors.white)
-                  .withValues(alpha: 0.88),
+              color: (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.88),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
@@ -411,8 +417,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
       child: Container(
         padding: const EdgeInsets.fromLTRB(8, 4, 14, 4),
         decoration: BoxDecoration(
-          color: (isDark ? AppPalette.cardDark : Colors.white)
-              .withValues(alpha: 0.92),
+          color: (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.92),
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
@@ -427,10 +432,9 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           builder: (context, _) => Row(
             children: [
               IconButton(
+                tooltip: _playing && _t < 1 ? 'Pause' : 'Play',
                 icon: Icon(
-                  _playing && _t < 1
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
+                  _playing && _t < 1 ? Icons.pause_rounded : Icons.play_arrow_rounded,
                   color: AppPalette.brand,
                 ),
                 onPressed: () {
@@ -445,10 +449,8 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
                 child: SliderTheme(
                   data: SliderTheme.of(context).copyWith(
                     trackHeight: 3,
-                    thumbShape:
-                        const RoundSliderThumbShape(enabledThumbRadius: 7),
-                    overlayShape:
-                        const RoundSliderOverlayShape(overlayRadius: 14),
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
                     activeTrackColor: AppPalette.brand,
                     thumbColor: AppPalette.brand,
                     inactiveTrackColor: AppPalette.brand.withValues(alpha: 0.15),
@@ -464,8 +466,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
               ),
               Text(
                 '${(_routePath!.total * _t).round()} m',
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: theme.textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -485,8 +486,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
             decoration: BoxDecoration(
-              color: (isDark ? AppPalette.cardDark : Colors.white)
-                  .withValues(alpha: 0.92),
+              color: (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.92),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -495,13 +495,11 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
                 Container(
                   width: 8,
                   height: 8,
-                  decoration: const BoxDecoration(
-                      shape: BoxShape.circle, color: AppPalette.origin),
+                  decoration: const BoxDecoration(shape: BoxShape.circle, color: AppPalette.origin),
                 ),
                 const SizedBox(width: 8),
                 Text('Live — following your progress',
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+                    style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -579,8 +577,7 @@ class _NetworkPainter extends CustomPainter {
         rings.add(pts);
       }
       if (n == 0) continue;
-      prisms.add(
-          _Prism(rings, Offset(cx / n, cy / n), f.isBridge, f.isOpenToSky));
+      prisms.add(_Prism(rings, Offset(cx / n, cy / n), f.isBridge, f.isOpenToSky));
     }
     _prismCache = prisms;
     _prismCacheKey = footprints.length;
@@ -624,13 +621,11 @@ class _NetworkPainter extends CustomPainter {
   void _paintNetwork(Canvas canvas, CameraFrame frame) {
     // Theme-resolved flat fills. Bridges get the skywalk teal identity.
     final topEnclosed = isDark ? const Color(0xFF23262B) : Colors.white;
-    final sideEnclosed =
-        isDark ? const Color(0xFF15171A) : const Color(0xFFC9C8C2);
+    final sideEnclosed = isDark ? const Color(0xFF15171A) : const Color(0xFFC9C8C2);
     final topBridge = isDark ? const Color(0xFF2E3740) : const Color(0xFFDCE3E8);
-    final sideBridge =
-        isDark ? const Color(0xFF1C2228) : const Color(0xFFA9B5BE);
-    final bridgeEdge = (isDark ? AppPalette.skywalkBright : AppPalette.skywalk)
-        .withValues(alpha: 0.55);
+    final sideBridge = isDark ? const Color(0xFF1C2228) : const Color(0xFFA9B5BE);
+    final bridgeEdge =
+        (isDark ? AppPalette.skywalkBright : AppPalette.skywalk).withValues(alpha: 0.55);
     final shadow = Colors.black.withValues(alpha: isDark ? 0.3 : 0.06);
 
     final faces = <_Face>[];
@@ -642,8 +637,7 @@ class _NetworkPainter extends CustomPainter {
 
       final top = prism.isBridge ? topBridge : topEnclosed;
       final side = prism.isBridge ? sideBridge : sideEnclosed;
-      final topColor =
-          prism.isOpenToSky ? top.withValues(alpha: 0.55) : top;
+      final topColor = prism.isOpenToSky ? top.withValues(alpha: 0.55) : top;
       final detailed = d < 600;
 
       for (final ring in prism.rings) {
@@ -769,8 +763,7 @@ class _NetworkPainter extends CustomPainter {
         ..strokeWidth = 9
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = (isDark ? Colors.black : Colors.white)
-            .withValues(alpha: 0.65),
+        ..color = (isDark ? Colors.black : Colors.white).withValues(alpha: 0.65),
     );
     canvas.drawPath(
       screen,
@@ -800,11 +793,7 @@ class _NetworkPainter extends CustomPainter {
       final p = path.pointAt(t);
       final sp = frame.project(p.dx, p.dy, z + 0.4);
       if (sp != null) {
-        canvas.drawCircle(
-            sp,
-            13,
-            Paint()
-              ..color = routeColor.withValues(alpha: 0.25));
+        canvas.drawCircle(sp, 13, Paint()..color = routeColor.withValues(alpha: 0.25));
         canvas.drawCircle(sp, 9, Paint()..color = Colors.white);
         canvas.drawCircle(sp, 6.5, Paint()..color = routeColor);
       }
@@ -812,8 +801,7 @@ class _NetworkPainter extends CustomPainter {
   }
 
   void _paintLabels(Canvas canvas, CameraFrame frame) {
-    final pillColor = (isDark ? AppPalette.cardDark : Colors.white)
-        .withValues(alpha: 0.85);
+    final pillColor = (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.85);
     final placed = <Rect>[];
 
     // Nearest labels win declutter priority.
@@ -870,8 +858,7 @@ class _NetworkPainter extends CustomPainter {
         Offset(sp.dx, rect.bottom),
         stemEnd,
         Paint()
-          ..color = (isDark ? Colors.white : Colors.black)
-              .withValues(alpha: 0.18 * alpha)
+          ..color = (isDark ? Colors.white : Colors.black).withValues(alpha: 0.18 * alpha)
           ..strokeWidth = 1,
       );
     }

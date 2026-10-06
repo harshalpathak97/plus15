@@ -43,6 +43,7 @@ class AlertsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
+          tooltip: 'Back',
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => context.pop(),
         ),
@@ -127,7 +128,7 @@ class AlertsScreen extends ConsumerWidget {
   }
 
   Widget _hoursCard(ThemeData theme, NetworkStatus status, Plus15Network net) {
-    final color = status.open ? AppPalette.origin : AppPalette.danger;
+    final color = status.open ? AppPalette.openText(theme.brightness) : AppPalette.danger;
     final h = net.hours;
     Widget row(String day, List<int> w) => Padding(
           padding: const EdgeInsets.only(top: 6),

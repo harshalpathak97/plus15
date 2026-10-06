@@ -11,6 +11,7 @@ import '../../../shared/providers/providers.dart';
 import '../../../shared/widgets/app_pill.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/sheet_surface.dart';
+import '../../../routing/conditions.dart';
 import '../../../routing/router.dart';
 import '../../route_planner/widgets/step_list.dart';
 import '../../shop_detail/shop_detail_sheet.dart';
@@ -296,6 +297,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
       BuildingTooltip(
         building: building,
         shops: shops,
+        networkStatus: ref.watch(conditionsProvider).valueOrNull?.networkStatusAt(calgaryNow()),
         onNavigateHere: () {
           ref.read(routeToProvider.notifier).state = building;
           ref.read(selectedBuildingProvider.notifier).state = null;
@@ -419,7 +421,8 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
     final brands = byLogo.values.toList()
       ..sort((a, b) => b.length.compareTo(a.length));
     return SizedBox(
-      height: 112,
+      // Logo and padding are fixed; the two text lines grow with text size.
+      height: 80 + MediaQuery.textScalerOf(context).scale(32),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: brands.length.clamp(0, 10),

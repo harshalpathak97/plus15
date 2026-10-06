@@ -129,7 +129,10 @@ class StepList extends StatelessWidget {
             child: Icon(icon, size: 15, color: color),
           ),
           const SizedBox(width: 6),
-          Expanded(child: Text(text, style: theme.textTheme.bodySmall?.copyWith(color: color))),
+          Expanded(
+              child: Text(text,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      color: color == AppPalette.warning ? AppPalette.warnText(theme.brightness) : color))),
         ],
       );
 

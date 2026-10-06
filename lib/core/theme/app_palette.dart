@@ -24,6 +24,14 @@ class AppPalette {
 
   // --- Semantic ----------------------------------------------------------
   static const Color origin = Color(0xFF1F9D55);
+  /// [origin] dark enough for small text on light surfaces (WCAG AA 5.3:1).
+  static const Color originText = Color(0xFF167A41);
+  /// Amber that passes AA as text on light surfaces; [warning] is for icons.
+  static const Color warningText = Color(0xFF8A5A00);
+
+  /// Text colors for open/closed and warnings, readable on either theme.
+  static Color openText(Brightness b) => b == Brightness.dark ? origin : originText;
+  static Color warnText(Brightness b) => b == Brightness.dark ? warning : warningText;
   static const Color destination = Color(0xFFE8553D);
   static const Color warning = Color(0xFFE09A00);
   static const Color danger = Color(0xFFD92D20);

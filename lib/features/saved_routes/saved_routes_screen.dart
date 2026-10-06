@@ -124,16 +124,7 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
         ),
         child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
       ),
-      onDismissed: (_) {
-        ref.read(savedRoutesProvider.notifier).remove(r.id);
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(
-            content: const Text('Route deleted'),
-            action: SnackBarAction(
-                label: 'Undo', onPressed: () => ref.read(savedRoutesProvider.notifier).add(r)),
-          ));
-      },
+      onDismissed: (_) => _delete(context, r),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
         leading: Container(
@@ -146,17 +137,31 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
           child: Icon(r.isRoutine ? Icons.bolt_rounded : Icons.route_rounded,
               color: theme.colorScheme.onPrimaryContainer),
         ),
-        title: Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(r.name, maxLines: 2, overflow: TextOverflow.ellipsis),
         subtitle: Text(
           '${profile.label}${r.isRoutine ? ' · on the map' : ''}'
           '${from == null || to == null ? ' · a building is no longer on the network' : ''}',
-          maxLines: 1,
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: IconButton.filledTonal(
-          tooltip: 'Start',
-          icon: const Icon(Icons.navigation_rounded),
-          onPressed: from == null || to == null ? null : () => _start(context, r),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton.filledTonal(
+              tooltip: 'Start',
+              icon: const Icon(Icons.navigation_rounded),
+              onPressed: from == null || to == null ? null : () => _start(context, r),
+            ),
+            // Rename and delete, also reachable by long-press and swipe.
+            PopupMenuButton<String>(
+              tooltip: 'More',
+              onSelected: (v) => v == 'rename' ? _rename(context, r) : _delete(context, r),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'rename', child: Text('Rename')),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
+          ],
         ),
         onTap: from == null || to == null
             ? null
@@ -168,6 +173,17 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
         onLongPress: () => _rename(context, r),
       ),
     );
+  }
+
+  void _delete(BuildContext context, SavedRoute r) {
+    ref.read(savedRoutesProvider.notifier).remove(r.id);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: const Text('Route deleted'),
+        action: SnackBarAction(
+            label: 'Undo', onPressed: () => ref.read(savedRoutesProvider.notifier).add(r)),
+      ));
   }
 
   /// Starts live navigation, or previews the route when the +15 is closed.

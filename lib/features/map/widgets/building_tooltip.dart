@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../data/models/shop.dart';
+import '../../../routing/conditions.dart';
 import '../../../routing/network.dart';
 import '../../../shared/widgets/brand_logo.dart';
 import '../../shop_detail/shop_detail_sheet.dart';
@@ -15,10 +16,14 @@ class BuildingTooltip extends StatelessWidget {
   final VoidCallback onNavigateHere;
   final VoidCallback onClose;
 
+  /// Whether the +15 is open now ("Open until 9 p.m."); null while loading.
+  final NetworkStatus? networkStatus;
+
   const BuildingTooltip({
     super.key,
     required this.building,
     required this.shops,
+    this.networkStatus,
     required this.onNavigateHere,
     required this.onClose,
   });
@@ -66,6 +71,14 @@ class BuildingTooltip extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+                  if (networkStatus case final st?)
+                    Text('+15 ${st.label.replaceFirst(st.label[0], st.label[0].toLowerCase())}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                            color: st.open
+                                ? AppPalette.openText(theme.brightness)
+                                : AppPalette.danger)),
                 ],
               ),
             ),

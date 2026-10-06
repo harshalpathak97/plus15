@@ -26,22 +26,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   static const _pages = [
     _OnboardPage(
       title: 'The +15, finally easy',
-      body:
-          '16 km of skywalk. 100+ buildings. One calm map of the largest elevated '
-          'indoor walkway network on earth.',
+      body: 'The +15 is Calgary’s network of heated indoor bridges, 15 feet above the '
+          'downtown streets. 16 km, 100+ buildings, one calm map.',
     ),
     _OnboardPage(
       icon: Icons.navigation_rounded,
       title: 'Know exactly where to turn',
-      body:
-          'Step-by-step directions by named bridges and buildings, so you can '
-          'find your way four storeys up even when GPS drifts.',
+      body: 'Step-by-step directions by named bridges and buildings, so you can '
+          'find your way between buildings even when GPS drifts.',
     ),
     _OnboardPage(
       icon: Icons.my_location_rounded,
       title: 'Place yourself in the network',
-      body:
-          'Turn on location to see where you are and get live guidance. '
+      body: 'Turn on location to see where you are and get live guidance. '
           'Only while you use the app. Never in the background, never sold.',
       isPermission: true,
     ),
@@ -74,8 +71,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   void _next() {
     HapticFeedback.selectionClick();
     if (_page < _pages.length - 1) {
-      _controller.nextPage(
-          duration: AppMotion.normal, curve: AppMotion.curve);
+      _controller.nextPage(duration: AppMotion.normal, curve: AppMotion.curve);
     }
   }
 
@@ -91,13 +87,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               children: [
                 Align(
                   alignment: Alignment.centerRight,
-                  child: AnimatedOpacity(
-                    opacity: isLast ? 0 : 1,
-                    duration: AppMotion.fast,
-                    child: TextButton(
-                      onPressed: isLast ? null : _finish,
-                      child: const Text('Skip'),
-                    ),
+                  // Keeps its space so the page doesn't jump; gone for screen readers.
+                  child: Visibility(
+                    visible: !isLast,
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    maintainState: true,
+                    child: TextButton(onPressed: _finish, child: const Text('Skip')),
                   ),
                 ),
                 Expanded(
@@ -111,15 +107,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 _dots(),
                 const SizedBox(height: AppSpacing.xl),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.xl, 0, AppSpacing.xl, AppSpacing.xl),
+                  padding:
+                      const EdgeInsets.fromLTRB(AppSpacing.xl, 0, AppSpacing.xl, AppSpacing.xl),
                   child: isLast
                       ? Column(
                           children: [
                             _primaryButton(
-                              label: _requesting
-                                  ? 'Enabling…'
-                                  : 'Show me where I am',
+                              label: _requesting ? 'Enabling…' : 'Show me where I am',
                               onTap: _enableLocation,
                             ),
                             const SizedBox(height: AppSpacing.sm),
@@ -138,7 +132,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       ),
     );
   }
-
 
   Widget _dots() {
     return Row(
@@ -189,56 +182,60 @@ class _OnboardPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 96,
-            height: 96,
-            decoration: BoxDecoration(
-              color: icon == null ? scheme.onSurface : scheme.primaryContainer,
-              borderRadius: BorderRadius.circular(28),
-            ),
-            child: icon == null
-                ? Center(
-                    child: Image.asset(AppConstants.logoMark,
-                        width: 60, color: scheme.surface, semanticLabel: AppConstants.appName))
-                : Icon(icon, color: scheme.onPrimaryContainer, size: 44),
-          )
-              .animate()
-              .scale(duration: AppMotion.slow, curve: Curves.easeOutBack),
-          const SizedBox(height: AppSpacing.xxxl),
-          Text(
-            title,
-            style: theme.textTheme.displayMedium,
-          ).animate().fadeIn(duration: AppMotion.normal).slideY(begin: 0.15, end: 0),
-          const SizedBox(height: AppSpacing.lg),
-          Text(
-            body,
-            style: theme.textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
-          )
-              .animate()
-              .fadeIn(duration: AppMotion.normal, delay: 80.ms)
-              .slideY(begin: 0.15, end: 0),
-          if (isPermission) ...[
-            const SizedBox(height: AppSpacing.xl),
-            Row(
-              children: [
-                Icon(Icons.lock_outline_rounded, color: scheme.onSurfaceVariant, size: 16),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'You can change this anytime in your device settings.',
-                    style: theme.textTheme.bodySmall,
-                  ),
+    // Scrolls when large text doesn't fit; centred otherwise.
+    return LayoutBuilder(
+      builder: (context, box) => SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: box.maxHeight),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  color: icon == null ? scheme.onSurface : scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(28),
                 ),
+                child: icon == null
+                    ? Center(
+                        child: Image.asset(AppConstants.logoMark,
+                            width: 60, color: scheme.surface, semanticLabel: AppConstants.appName))
+                    : Icon(icon, color: scheme.onPrimaryContainer, size: 44),
+              ).animate().scale(duration: AppMotion.slow, curve: Curves.easeOutBack),
+              const SizedBox(height: AppSpacing.xxxl),
+              Text(
+                title,
+                style: theme.textTheme.displayMedium,
+              ).animate().fadeIn(duration: AppMotion.normal).slideY(begin: 0.15, end: 0),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                body,
+                style: theme.textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
+              )
+                  .animate()
+                  .fadeIn(duration: AppMotion.normal, delay: 80.ms)
+                  .slideY(begin: 0.15, end: 0),
+              if (isPermission) ...[
+                const SizedBox(height: AppSpacing.xl),
+                Row(
+                  children: [
+                    Icon(Icons.lock_outline_rounded, color: scheme.onSurfaceVariant, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'You can change this anytime in your device settings.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ).animate().fadeIn(duration: AppMotion.normal, delay: 160.ms),
               ],
-            ).animate().fadeIn(duration: AppMotion.normal, delay: 160.ms),
-          ],
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
