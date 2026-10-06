@@ -69,6 +69,12 @@ Scotia Centre is located on 7th Avenue SW.
       expect(parsed.text, 'Try Analog.');
     });
 
+    test('Shows markdown answers as plain text', () {
+      final parsed = AiMessage.parseActions(AiMessage(
+          id: '6', text: '## Coffee\n- **Starbucks** in __Bankers Hall__', isUser: false, timestamp: t));
+      expect(parsed.text, 'Coffee\n- Starbucks in Bankers Hall');
+    });
+
     test('Leaves regular messages unchanged', () {
       const rawText = 'Calgary +15 is open from 6am to 6pm on weekdays.';
       final parsed =

@@ -11,8 +11,7 @@ name = "LIMITER"
 namespace_id = "1501"
 simple = { limit = 20, period = 60 }
 
-# Global daily budget (see DAILY_CAP in worker.js). Create the namespace with
-# `wrangler kv namespace create USAGE` and paste its id here before deploying.
-# [[kv_namespaces]]
-# binding = "USAGE"
-# id = "<from wrangler kv namespace create USAGE>"
+# Global daily budget (see DAILY_CAP in worker.js); `wrangler kv namespace create USAGE`.
+[[kv_namespaces]]
+binding = "USAGE"
+id = "8381221db24e432485bed780a7592885"

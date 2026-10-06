@@ -82,28 +82,25 @@ Status: **Fixed**, or **You** (needs an action only you can take).
 - Hard-coded corner radii and `Colors.white/black` in map/3D code: cosmetic.
 - `hive` is unmaintained. It stores nothing sensitive; replace it on the next storage change.
 
-## What you need to do before submitting
+## Launch checklist (status 2026-10-06)
 
-1. **Rotate the NVIDIA key.** The old one shipped in an earlier APK (see `docs/security-audit.md`). Set a spend/usage cap in the NVIDIA console.
-2. **Deploy the AI proxy** (or ship without AI: the app hides it automatically):
-   ```bash
-   cd server/ai-proxy
-   npx wrangler login
-   npx wrangler kv namespace create USAGE   # paste the id into wrangler.toml (uncomment the block)
-   npx wrangler secret put NVIDIA_API_KEY
-   npx wrangler deploy
-   ```
-   Then set `secrets.json` to `{"AI_PROXY_URL": "https://plus15-ai.<you>.workers.dev/v1/chat/completions"}`.
-3. **GitHub Pages:** repo Settings → Pages → Deploy from branch `main`, folder `/docs`. The policy is then at `https://harshalpathak97.github.io/plus15/privacy.html` (already linked in the app). Merge this branch first.
-4. **Make sure developer@harshalpathak.com receives mail.** It's the contact for feedback, closure reports, AI reports and the privacy policy.
-5. **Upload key:** create a keystore and `android/key.properties` (see README), and enroll in Play App Signing.
-6. **Build:** `flutter build appbundle --release --dart-define-from-file=secrets.json --obfuscate --split-debug-info=build/symbols` with Flutter 3.47.6 (`~/development/flutter-3.47`). Keep `build/symbols`.
-7. **Play Console:**
-   - Personal account created after Nov 2023: run a closed test with **12 testers for 14 days** before you can apply for production.
-   - Content rating questionnaire: say yes to user-prompted AI-generated content.
-   - Store listing: screenshots, the "not affiliated with The City of Calgary" line, and a support email.
-   - Data safety: answers below.
-8. **Icon:** swap in the new icon from the `honiara` workspace. The current one copies the City's +15 sign.
+- [x] AI proxy deployed: `https://plus15-ai.harshalpathak.workers.dev` (KV daily cap, rate limit). `secrets.json` points at it.
+- [x] Privacy policy live: https://harshalpathak97.github.io/plus15/privacy.html
+- [x] Upload keystore created: `~/development/keys/plus15-upload.jks` (password in `~/development/keys/plus15-key.properties`). **Back both up somewhere safe (a password manager)**; Play App Signing can reset a lost upload key, but it takes days.
+- [x] Signed release built: `~/Downloads/Plus15-release-1.0.0/` (`.aab` for Play, `.apk` for sideload testing, debug symbols zip for crash stacks).
+- [ ] **Rotate the NVIDIA key** if the deployed one is the key that leaked in the old APK: `npx wrangler secret put NVIDIA_API_KEY` (no rebuild needed). Set a usage cap at NVIDIA.
+- [ ] Check that developer@harshalpathak.com receives mail.
+- [ ] Play Console:
+  - Create the app, enroll in Play App Signing, and upload the `.aab`.
+  - Personal account: run a closed test with 12 testers for 14 days.
+  - Content rating: declare the AI chatbot.
+  - Data safety: answers below.
+  - Store listing: add the "not affiliated with The City of Calgary" line.
+- [ ] New icon in an update (the current one resembles the City's +15 sign).
+
+Rebuild with Flutter 3.47.6 (`~/development/flutter-3.47`):
+`flutter build appbundle --release --dart-define-from-file=secrets.json --obfuscate --split-debug-info=build/symbols`.
+Bump `version:` in `pubspec.yaml` (e.g. `1.0.1+2`) for every upload.
 
 ## Data safety form answers
 
