@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_spacing.dart';
@@ -64,13 +63,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     setState(() => _requesting = true);
     HapticFeedback.lightImpact();
     try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (serviceEnabled) {
-        var permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.denied) {
-          await Geolocator.requestPermission();
-        }
-      }
+      await requestLocationAccess(ref);
     } catch (_) {
       // Permission flow is best-effort; never block onboarding on it.
     } finally {

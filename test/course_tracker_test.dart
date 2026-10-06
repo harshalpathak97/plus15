@@ -6,8 +6,9 @@ import 'routing/support.dart';
 
 void main() {
   final route = mustRoute('the_bow', 'bankers_hall');
-  final tracker = CourseTracker(route);
   final g = route.geometry;
+  late CourseTracker tracker;
+  setUp(() => tracker = CourseTracker(route));
 
   test('on the drawn route: zero offset, progress along the edges', () {
     final mid = g[g.length ~/ 2];
@@ -34,5 +35,19 @@ void main() {
     final early = tracker.progressAt(LatLng(g[1][0], g[1][1])).stepIndex;
     final late = tracker.progressAt(LatLng(g[g.length - 2][0], g[g.length - 2][1])).stepIndex;
     expect(late, greaterThan(early));
+  });
+
+  test('progress never jumps back to an earlier part of the route', () {
+    tracker.progressAt(LatLng(g.last[0], g.last[1]));
+    final p = tracker.progressAt(LatLng(g.first[0], g.first[1]));
+    expect(p.remainingM, lessThan(route.lengthM / 2));
+  });
+
+  test('a zero-hop route (same building) is already arrived, never infinite', () {
+    final same = mustRoute('the_bow', 'the_bow');
+    final p = CourseTracker(same).progressAt(const LatLng(51.05, -114.06));
+    expect(p.offRouteM, 0);
+    expect(p.remainingM, 0);
+    expect(p.offRouteM.isFinite, isTrue);
   });
 }

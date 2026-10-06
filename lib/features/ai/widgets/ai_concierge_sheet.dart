@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../shared/widgets/contact.dart';
 import '../../../routing/network.dart';
 import '../../../shared/providers/providers.dart';
 import '../models/ai_message.dart';
@@ -41,11 +44,40 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
 
   KimiAiNotifier get _ai => ref.read(kimiAiProvider.notifier);
 
+  /// Nothing is sent before the user agrees to share it with the AI service.
+  late bool _consented = _ai.hasConsent;
+
   @override
   void initState() {
     super.initState();
+    _sendInitial();
+  }
+
+  void _sendInitial() {
     final prompt = widget.initialPrompt;
-    if (prompt != null) WidgetsBinding.instance.addPostFrameCallback((_) => _send(prompt));
+    if (prompt != null && _consented) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _send(prompt));
+    }
+  }
+
+  Future<void> _agree() async {
+    await _ai.giveConsent();
+    if (!mounted) return;
+    setState(() => _consented = true);
+    _sendInitial();
+  }
+
+  /// Play policy: users can flag an offensive or harmful AI answer.
+  void _report(AiMessage answer) {
+    final messages = ref.read(kimiAiProvider);
+    final i = messages.indexOf(answer);
+    final question = i > 0 ? messages[i - 1].text : '';
+    openMail(
+      context,
+      subject: 'Plus 15 - Report an Ask +15 answer',
+      body: 'What is wrong with this answer?\n\n\n'
+          '---\nQuestion: $question\n\nAnswer: ${answer.text}\n',
+    );
   }
 
   @override
@@ -114,7 +146,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Ask +15', style: theme.textTheme.titleLarge),
-                          Text('Powered by Kimi · answers can be wrong', style: muted),
+                          Text('AI answers can be wrong. Check before you go.', style: muted),
                         ],
                       ),
                     ),
@@ -128,7 +160,9 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
               ),
               const Divider(height: 1),
               Expanded(
-                child: messages.isNotEmpty
+                child: _ai.isConfigured && !_consented
+                    ? _consent(theme, muted)
+                    : messages.isNotEmpty
                     ? ListView.builder(
                         controller: _scroll,
                         reverse: true, // keeps the newest tokens in view
@@ -166,9 +200,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
                             children: [
                               Text(
                                 'Ask about places, food and routes on the +15. Answers use '
-                                "the app's buildings, shops and route planner. Your questions "
-                                'and roughly where you are on the +15 are sent to an AI service '
-                                'to answer them.',
+                                "the app's buildings, shops and route planner.",
                                 style: theme.textTheme.bodyMedium
                                     ?.copyWith(color: cs.onSurfaceVariant, height: 1.45),
                               ),
@@ -184,7 +216,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
                             ],
                           ),
               ),
-              if (_ai.isConfigured) ...[
+              if (_ai.isConfigured && _consented) ...[
                 const Divider(height: 1),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(
@@ -250,7 +282,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (reasoning.isNotEmpty) ...[
+            if (kDebugMode && reasoning.isNotEmpty) ...[
               TextButton.icon(
                 onPressed: () => setState(
                     () => open ? _openReasoning.remove(m.id) : _openReasoning.add(m.id)),
@@ -258,7 +290,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
                 label: const Text('Reasoning'),
                 style: TextButton.styleFrom(
                   padding: EdgeInsets.zero,
-                  minimumSize: const Size(0, 36),
+                  minimumSize: const Size(0, 48),
                   textStyle: theme.textTheme.labelLarge,
                 ),
               ),
@@ -282,9 +314,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
                 child: SizedBox(width: 48, child: LinearProgressIndicator(minHeight: 2)),
               ),
             if (m.queued) ...[
-              Text("Kimi is busy on NVIDIA's servers. A quick model will answer if it "
-                  "doesn't start soon.",
-                  style: muted),
+              Text('Still thinking. This can take up to a minute.', style: muted),
               TextButton(onPressed: _ai.answerQuickly, child: const Text('Get a quick answer')),
             ],
             for (final (n, b) in offers)
@@ -318,7 +348,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
                     FilledButton(
                       onPressed: () => _showRoute(n, b, buildings),
                       style: FilledButton.styleFrom(
-                        minimumSize: const Size(0, 40),
+                        minimumSize: const Size(0, 48),
                         padding: const EdgeInsets.symmetric(horizontal: 14),
                       ),
                       child: Text(offers.length > 1 ? 'Go' : 'Show route'),
@@ -332,7 +362,17 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
                 icon: const Icon(Icons.map_outlined),
                 label: const Text('Show on map'),
               ),
-            if (m.answeredBy != null && m.answeredBy != kimiModel)
+            if (!m.isUser && !m.isStreaming && m.text.isNotEmpty)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _report(m),
+                  icon: const Icon(Icons.flag_outlined, size: 18),
+                  label: const Text('Report'),
+                  style: TextButton.styleFrom(foregroundColor: cs.onSurfaceVariant),
+                ),
+              ),
+            if (kDebugMode && m.answeredBy != null && m.answeredBy != kimiModel)
               Padding(
                 padding: const EdgeInsets.only(top: AppSpacing.xs),
                 child: Text(
@@ -343,6 +383,55 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _consent(ThemeData theme, TextStyle? muted) {
+    Widget item(IconData icon, String text) => Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 20, color: theme.colorScheme.primary),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
+            ],
+          ),
+        );
+    return ListView(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      children: [
+        Text('Before you ask', style: theme.textTheme.titleMedium),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Ask +15 answers with an AI model run by NVIDIA (models from Moonshot AI, OpenAI '
+          'and Meta). To answer, the app sends NVIDIA:',
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        item(Icons.chat_outlined, 'Your questions and the earlier messages in this chat.'),
+        item(Icons.near_me_outlined,
+            'Roughly where you are on the +15 (the nearest door or walkway), never your GPS coordinates.'),
+        item(Icons.bookmark_border_rounded,
+            'Your saved places, the trip open in Navigate, and whether you prefer step-free routes.'),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'No account or name is attached, and the app keeps nothing on a server. '
+          "Don't include personal details in your questions.",
+          style: muted,
+        ),
+        TextButton(
+          onPressed: () => openLink(context, AppConstants.privacyUrl),
+          child: const Text('Privacy policy'),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        FilledButton(onPressed: _agree, child: const Text('Agree and continue')),
+        const SizedBox(height: AppSpacing.sm),
+        OutlinedButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Not now'),
+        ),
+      ],
     );
   }
 }

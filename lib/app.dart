@@ -5,11 +5,35 @@ import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'shared/providers/providers.dart';
 
-class Plus15App extends ConsumerWidget {
+class Plus15App extends ConsumerStatefulWidget {
   const Plus15App({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<Plus15App> createState() => _Plus15AppState();
+}
+
+class _Plus15AppState extends ConsumerState<Plus15App> {
+  // Back from Settings with location just turned on: pick it up.
+  late final _lifecycle = AppLifecycleListener(onResume: () {
+    if (ref.read(locationStreamProvider).valueOrNull == null) {
+      ref.invalidate(locationStreamProvider);
+    }
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle;
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp.router(
       title: 'Plus 15',
       debugShowCheckedModeBanner: false,

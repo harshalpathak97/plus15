@@ -13,8 +13,10 @@ import '../../routing/conditions.dart';
 import '../../routing/network.dart';
 import '../../routing/router.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/widgets/location_prompt.dart';
 import '../../shared/widgets/screen_header.dart';
 import '../ai/widgets/ai_concierge_sheet.dart';
+import '../ai/services/kimi_ai_service.dart' show aiConfigured;
 import '../transit/street_directions.dart';
 import 'widgets/route_option_card.dart';
 import 'widgets/step_list.dart';
@@ -43,6 +45,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   List<String> _unavailable = const [];
   int _selectedIndex = 0;
   bool _busy = false;
+  bool _locating = false;
+
   /// Set when the user chose "Use my location" as the start.
   LatLng? _fromLocation;
 
@@ -50,7 +54,10 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (ref.read(routeFromMyLocationProvider)) {
+      // Start from where you are when we already know it (no prompt).
+      if (ref.read(routeFromMyLocationProvider) ||
+          ref.read(routeFromProvider) == null &&
+              ref.read(locationStreamProvider).valueOrNull != null) {
         _useMyLocationAsStart();
       } else {
         _recalculate();
@@ -64,7 +71,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     ref.read(routeFromMyLocationProvider.notifier).state = false;
   }
 
-  bool get _ready => (ref.read(routeFromProvider) != null || _fromLocation != null) &&
+  bool get _ready =>
+      (ref.read(routeFromProvider) != null || _fromLocation != null) &&
       ref.read(routeToProvider) != null;
 
   /// Routes update as soon as both ends are set (from here, the map, search
@@ -160,18 +168,20 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                 const SizedBox(height: AppSpacing.lg),
                 StepList(route: selected.route, showDebug: ref.watch(debugGraphProvider)),
                 if (ref.watch(debugGraphProvider)) RouteExplanation(route: selected.route),
-                const SizedBox(height: AppSpacing.lg),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => showAiConcierge(context,
-                        initialPrompt: 'Tell me about the +15 route from '
-                            '${from?.name ?? 'my location'} to ${to!.name}. '
-                            'Anything to grab on the way?'),
-                    icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-                    label: const Text('Ask +15 about this route'),
+                if (aiConfigured) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => showAiConcierge(context,
+                          initialPrompt: 'Tell me about the +15 route from '
+                              '${from?.name ?? 'my location'} to ${to!.name}. '
+                              'Anything to grab on the way?'),
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                      label: const Text('Ask +15 about this route'),
+                    ),
                   ),
-                ),
+                ],
                 if (to != null) ...[
                   const SizedBox(height: AppSpacing.md),
                   Text('Not in the +15 yet?', style: theme.textTheme.titleSmall),
@@ -196,35 +206,35 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
           const SizedBox(height: AppSpacing.md),
           Text('Choose where you’re starting and where you’re going.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              style:
+                  theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ],
       );
 
   Widget _noRoute(ThemeData theme) {
     final to = ref.read(routeToProvider);
     return Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.xxl),
-        child: Column(
-          children: [
-            Icon(Icons.wrong_location_outlined, size: 40, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(height: AppSpacing.md),
-            Text('No route found', style: theme.textTheme.titleMedium),
-            const SizedBox(height: AppSpacing.xs),
-            for (final u in _unavailable)
-              Text(u,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-            if (to != null && _fromLocation != null) ...[
-              const SizedBox(height: AppSpacing.lg),
-              Text('Get to ${to.name}', style: theme.textTheme.titleSmall),
-              const SizedBox(height: AppSpacing.sm),
-              StreetDirectionsRow(building: to),
-            ],
+      padding: const EdgeInsets.only(top: AppSpacing.xxl),
+      child: Column(
+        children: [
+          Icon(Icons.wrong_location_outlined, size: 40, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(height: AppSpacing.md),
+          Text('No route found', style: theme.textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.xs),
+          for (final u in _unavailable)
+            Text(u,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          if (to != null && _fromLocation != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            Text('Get to ${to.name}', style: theme.textTheme.titleSmall),
+            const SizedBox(height: AppSpacing.sm),
+            StreetDirectionsRow(building: to),
           ],
-        ),
-      ).animate().fadeIn(duration: 250.ms);
+        ],
+      ),
+    ).animate().fadeIn(duration: 250.ms);
   }
 
   Widget _actions(PlannedRoute route) {
@@ -280,8 +290,12 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                   onTap: () => _showBuildingPicker(context, buildings, true),
                   trailing: IconButton(
                     tooltip: 'Start from my location',
-                    icon: Icon(Icons.my_location_rounded,
-                        color: _fromLocation != null ? scheme.primary : scheme.onSurfaceVariant),
+                    icon: _locating
+                        ? const SizedBox.square(
+                            dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Icon(Icons.my_location_rounded,
+                            color:
+                                _fromLocation != null ? scheme.primary : scheme.onSurfaceVariant),
                     onPressed: _useMyLocationAsStart,
                   ),
                 ),
@@ -300,14 +314,17 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
           IconButton(
             tooltip: 'Swap start and destination',
             icon: const Icon(Icons.swap_vert_rounded),
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              final f = ref.read(routeFromProvider);
-              final t = ref.read(routeToProvider);
-              setState(_clearLocationStart);
-              ref.read(routeFromProvider.notifier).state = t;
-              ref.read(routeToProvider.notifier).state = f;
-            },
+            // "My location" can't be a destination.
+            onPressed: _fromLocation != null
+                ? null
+                : () {
+                    HapticFeedback.selectionClick();
+                    final f = ref.read(routeFromProvider);
+                    final t = ref.read(routeToProvider);
+                    setState(_clearLocationStart);
+                    ref.read(routeFromProvider.notifier).state = t;
+                    ref.read(routeToProvider.notifier).state = f;
+                  },
           ),
           const SizedBox(width: 4),
         ],
@@ -330,7 +347,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 60),
         child: Padding(
-          padding: EdgeInsets.only(left: AppSpacing.lg, right: trailing == null ? AppSpacing.lg : 0),
+          padding:
+              EdgeInsets.only(left: AppSpacing.lg, right: trailing == null ? AppSpacing.lg : 0),
           child: Row(
             children: [
               Icon(icon, size: 20, color: color),
@@ -356,7 +374,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
 
   void _showBuildingPicker(BuildContext context, List<NetBuilding> buildings, bool isFrom) {
     final searchController = TextEditingController();
-    final sorted = [...buildings.where((b) => b.isRoutable)]..sort((a, b) => a.name.compareTo(b.name));
+    final sorted = [...buildings.where((b) => b.isRoutable)]
+      ..sort((a, b) => a.name.compareTo(b.name));
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -372,6 +391,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
             if (n.split(' ').any((w) => w.startsWith(query))) return 2;
             return 3;
           }
+
           final filtered = sorted
               .where((b) =>
                   b.name.toLowerCase().contains(query) ||
@@ -386,7 +406,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
             builder: (context, controller) => Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
+                  padding:
+                      const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
                   child: TextField(
                     controller: searchController,
                     onChanged: (_) => setModalState(() {}),
@@ -515,14 +536,24 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   /// Start from the phone's location. Outside the +15 the route first walks
   /// you outdoors to the best nearby door.
   Future<void> _useMyLocationAsStart() async {
+    if (_locating) return;
     final messenger = ScaffoldMessenger.of(context);
-    ref.read(routeFromMyLocationProvider.notifier).state = true;
-    final loc = await ref.read(locationStreamProvider.future);
+    setState(() => _locating = true);
+    LatLng? loc;
+    try {
+      if (await ensureLocation(context, ref) && mounted) {
+        ref.read(routeFromMyLocationProvider.notifier).state = true;
+        loc = await ref.read(locationStreamProvider.future).timeout(const Duration(seconds: 12));
+      }
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text("Couldn't find your location. Choose a starting building.")));
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
     if (!mounted) return;
     if (loc == null) {
       ref.read(routeFromMyLocationProvider.notifier).state = false;
-      messenger.showSnackBar(const SnackBar(
-          content: Text('Location is off or unavailable. Choose a starting building.')));
       return;
     }
     setState(() => _fromLocation = loc);

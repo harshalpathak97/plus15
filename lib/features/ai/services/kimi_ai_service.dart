@@ -27,9 +27,9 @@ const kimiModel = 'moonshotai/kimi-k3';
 /// Tried in order when Kimi fails, and straight away for a quick answer.
 const fallbackModels = ['openai/gpt-oss-20b', 'meta/llama-3.2-11b-vision-instruct'];
 
-/// Kimi can wait in NVIDIA's queue for minutes before its first token; after
+/// Kimi often waits 30–70 s in NVIDIA's queue before its first token; after
 /// this long the quick model answers instead (the user can also skip ahead).
-const _kimiFirstToken = Duration(seconds: 25);
+const _kimiFirstToken = Duration(seconds: 75);
 const _fallbackFirstToken = Duration(seconds: 20);
 const _messageTimeout = Duration(seconds: 150);
 
@@ -40,6 +40,12 @@ final kimiAiProvider = StateNotifierProvider<KimiAiNotifier, List<AiMessage>>(
   (ref) => KimiAiNotifier(ref),
 );
 
+/// False when the build has no AI_PROXY_URL, or (release) one that isn't
+/// https: Android's cleartext setting doesn't cover Dart's HTTP client.
+/// Every Ask +15 entry point hides when this is false.
+final bool aiConfigured =
+    _endpoint.isNotEmpty && (!kReleaseMode || _endpoint.startsWith('https://'));
+
 class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
   /// [messages] restores a conversation.
   KimiAiNotifier(this._ref, [List<AiMessage> messages = const []]) : super(messages);
@@ -49,10 +55,12 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
   /// The request in flight; closing it cancels it.
   http.Client? _client;
 
-  /// False when the build has no AI_PROXY_URL, or (release) one that isn't
-  /// https: Android's cleartext setting doesn't cover Dart's HTTP client.
-  bool get isConfigured =>
-      _endpoint.isNotEmpty && (!kReleaseMode || _endpoint.startsWith('https://'));
+  bool get isConfigured => aiConfigured;
+
+  /// The user agreed to send questions to the AI provider (asked once).
+  bool get hasConsent => _ref.read(localStorageProvider).getAiConsent();
+
+  Future<void> giveConsent() => _ref.read(localStorageProvider).setAiConsent(true);
 
   bool get isBusy => state.lastOrNull?.isStreaming ?? false;
 
@@ -71,7 +79,7 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
 
   Future<void> send(String text) async {
     final q = text.trim();
-    if (q.isEmpty || isBusy || !isConfigured) return;
+    if (q.isEmpty || isBusy || !isConfigured || !hasConsent) return;
     final now = DateTime.now();
     final id = '${now.microsecondsSinceEpoch}';
     // Earlier turns, without failed replies.
@@ -98,6 +106,8 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
           break;
         }
       }
+    } catch (_) {
+      // Planning the prompt failed: fall through to the apology below.
     } finally {
       _update(
         id,
@@ -205,6 +215,7 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
     final queued =
         kimi ? Timer(_queuedAfter, () => _update(id, (m) => m.copyWith(queued: true))) : null;
     final text = StringBuffer(), reasoning = StringBuffer();
+    var done = false;
     try {
       final res = await client.send(http.Request('POST', Uri.parse(_endpoint))
         ..headers.addAll({
@@ -220,7 +231,10 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
         }));
       if (res.statusCode != 200) return null;
       await for (final line in res.stream.transform(utf8.decoder).transform(const LineSplitter())) {
-        if (line.startsWith('data: [DONE]')) break;
+        if (line.startsWith('data: [DONE]')) {
+          done = true;
+          break;
+        }
         final (content, thought) = sseDelta(line) ?? ('', '');
         if (content.isEmpty && thought.isEmpty) continue;
         noToken.cancel();
@@ -245,7 +259,10 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
       client.close();
       if (kimi) _update(id, (m) => m.copyWith(queued: false));
     }
-    return text.isEmpty || _client != client ? null : text.toString();
+    if (text.isEmpty || _client != client) return null;
+    // The connection dropped or hit the deadline mid-answer: say so rather
+    // than pass a partial answer off as complete.
+    return done ? text.toString() : '${text.toString().replaceFirst(_trailingTag, '')}\n\n(Answer cut off. Try asking again.)';
   }
 
   void _cancel() {

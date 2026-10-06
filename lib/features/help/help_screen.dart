@@ -1,12 +1,13 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/widgets/contact.dart';
 import '../../shared/widgets/glass_card.dart';
 
 /// Help & feedback. Teaches people how to read the +15 map (the single biggest
@@ -111,6 +112,24 @@ class HelpScreen extends ConsumerWidget {
                 const SizedBox(height: AppSpacing.md),
                 _legendRow(theme, AppPalette.danger, Icons.block_rounded,
                     'Closed', 'A published City closure. Routes go around it.'),
+                const SizedBox(height: AppSpacing.lg),
+                Text('Building dots', style: theme.textTheme.titleSmall),
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.lg,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    for (final (type, label) in const [
+                      ('retail', 'Shopping'),
+                      ('hotel', 'Hotel'),
+                      ('landmark', 'Landmark'),
+                      ('entertainment', 'Food & entertainment'),
+                      ('transit', 'Transit'),
+                    ])
+                      _dotLabel(theme, AppPalette.typeColor(type), label),
+                    _dotLabel(theme, theme.colorScheme.outline, 'Other'),
+                  ],
+                ),
               ],
             ),
           ),
@@ -140,7 +159,7 @@ class HelpScreen extends ConsumerWidget {
               children: [
                 _actionRow(context, Icons.report_outlined, 'Report a closure',
                     'Saw a bridge blocked? Let us know.', () {
-                  _openMail(
+                  openMail(
                     context,
                     subject: 'Plus 15 - Bridge closure report',
                     body: 'Hi,\n\nI noticed a closure on the +15 network:\n\n'
@@ -150,7 +169,7 @@ class HelpScreen extends ConsumerWidget {
                 const Divider(indent: 56),
                 _actionRow(context, Icons.feedback_outlined, 'Send feedback',
                     'Ideas, bugs, or a place we\'re missing.', () {
-                  _openMail(
+                  openMail(
                     context,
                     subject: 'Plus 15 - App feedback',
                     body: 'Hi,\n\nHere\'s my feedback:\n\n',
@@ -159,15 +178,37 @@ class HelpScreen extends ConsumerWidget {
               ],
             ),
           ),
-          _sectionTitle(theme, 'Developer'),
+          if (kDebugMode) ...[
+            _sectionTitle(theme, 'Developer'),
+            GlassCard(
+              padding: EdgeInsets.zero,
+              child: SwitchListTile(
+                secondary: const Icon(Icons.hub_outlined),
+                title: const Text('Routing debug overlay'),
+                subtitle:
+                    const Text('Show graph nodes, edges, City bridge numbers and a cost breakdown.'),
+                value: ref.watch(debugGraphProvider),
+                onChanged: (v) => ref.read(debugGraphProvider.notifier).setEnabled(v),
+              ),
+            ),
+          ],
+          _sectionTitle(theme, 'About'),
           GlassCard(
             padding: EdgeInsets.zero,
-            child: SwitchListTile(
-              secondary: const Icon(Icons.hub_outlined),
-              title: const Text('Routing debug overlay'),
-              subtitle: const Text('Show graph nodes, edges, City bridge numbers and a cost breakdown.'),
-              value: ref.watch(debugGraphProvider),
-              onChanged: (v) => ref.read(debugGraphProvider.notifier).setEnabled(v),
+            child: Column(
+              children: [
+                _actionRow(context, Icons.privacy_tip_outlined, 'Privacy policy',
+                    'What the app sends, and to whom.',
+                    () => openLink(context, AppConstants.privacyUrl)),
+                const Divider(indent: 56),
+                _actionRow(context, Icons.description_outlined, 'Open-source licences',
+                    'Software used to build the app.',
+                    () => showLicensePage(
+                          context: context,
+                          applicationName: AppConstants.appName,
+                          applicationVersion: appBuildName,
+                        )),
+              ],
             ),
           ),
           const SizedBox(height: AppSpacing.xxl),
@@ -176,9 +217,16 @@ class HelpScreen extends ConsumerWidget {
                 width: 32, color: theme.colorScheme.onSurface, excludeFromSemantics: true),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Center(
-            child: Text('Plus 15 · Calgary’s +15 navigator\nNetwork data: City of Calgary',
-                textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+          Text(
+            '${AppConstants.appName}${appBuildName == null ? '' : ' $appBuildName'} · '
+            'Calgary’s +15 navigator\n\n'
+            'An independent app. Not affiliated with or endorsed by The City of Calgary.\n\n'
+            'Contains information licensed under the Open Government Licence – City of Calgary. '
+            'Map data © OpenStreetMap contributors (ODbL). Imagery and base maps powered by Esri.\n\n'
+            'Brand names and logos belong to their owners and are shown only to identify '
+            'locations; no endorsement is implied.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall,
           ),
         ],
       ),
@@ -187,25 +235,6 @@ class HelpScreen extends ConsumerWidget {
 
   static double _nearestPace(double v) =>
       [3.5, 4.5, 5.5].reduce((a, b) => (a - v).abs() <= (b - v).abs() ? a : b);
-
-  Future<void> _openMail(BuildContext context,
-      {required String subject, required String body}) async {
-    HapticFeedback.lightImpact();
-    final uri = Uri(
-      scheme: 'mailto',
-      path: 'feedback@plus15.app',
-      queryParameters: {'subject': subject, 'body': body},
-    );
-    final ok = await launchUrl(uri);
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-          content: Text('No mail app found - email us at feedback@plus15.app'),
-          behavior: SnackBarBehavior.floating,
-        ));
-    }
-  }
 
   Widget _sectionTitle(ThemeData theme, String title) => Padding(
         padding: const EdgeInsets.fromLTRB(4, AppSpacing.xl, 4, AppSpacing.sm),
@@ -239,6 +268,19 @@ class HelpScreen extends ConsumerWidget {
       ],
     );
   }
+
+  Widget _dotLabel(ThemeData theme, Color color, String label) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Text(label, style: theme.textTheme.bodySmall),
+        ],
+      );
 
   Widget _tip(ThemeData theme, IconData icon, String text) {
     return Row(

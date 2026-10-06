@@ -95,21 +95,21 @@ class AiMessage {
   /// [ACTION:FOCUS|name=Scotia Centre]
   /// A reply may offer up to three places; all tags are removed from the text.
   static AiMessage parseActions(AiMessage msg) {
-    final navRegex = RegExp(
-      r'\[ACTION:NAVIGATE\|from=([^|\]]+)\|to=([^|\]]+)(?:\|place=([^|\]]+))?\]',
-      caseSensitive: false,
-    );
+    // Fields in any order: |from=…|to=…|place=…
+    final navRegex = RegExp(r'\[ACTION:NAVIGATE((?:\|[^|\]]*)*)\]', caseSensitive: false);
     final focusRegex = RegExp(r'\[ACTION:FOCUS\|name=([^|\]]+)\]', caseSensitive: false);
     final navs = <AiNavigation>[
       for (final m in navRegex.allMatches(msg.text))
-        (from: m.group(1)!.trim(), to: m.group(2)!.trim(), place: m.group(3)?.trim()),
+        if (_fields(m.group(1)!) case {'to': final to} when to.isNotEmpty)
+          (from: _fields(m.group(1)!)['from'] ?? 'current', to: to, place: _fields(m.group(1)!)['place']),
     ];
     final unique = <AiNavigation>[];
     for (final n in navs) {
       if (unique.length < 3 && !unique.any((u) => u.to == n.to && u.place == n.place)) unique.add(n);
     }
     final focus = focusRegex.firstMatch(msg.text);
-    final text = msg.text.replaceAll(navRegex, '').replaceAll(focusRegex, '').trim();
+    // Drop every tag, including ones too malformed to act on.
+    final text = msg.text.replaceAll(_anyTag, '').trim();
     if (unique.isNotEmpty) {
       return msg.copyWith(
         text: text,
@@ -125,4 +125,13 @@ class AiMessage {
     }
     return msg.copyWith(text: text);
   }
+
+  static final _anyTag = RegExp(r'\[ACTION:[^\]]*\]?', caseSensitive: false);
+
+  /// `|from=A|to=B` → {from: A, to: B}; keys lower-cased, values trimmed.
+  static Map<String, String> _fields(String s) => {
+        for (final part in s.split('|'))
+          if (part.indexOf('=') case final i when i > 0)
+            part.substring(0, i).trim().toLowerCase(): part.substring(i + 1).trim(),
+      };
 }

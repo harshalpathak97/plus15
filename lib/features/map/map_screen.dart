@@ -16,8 +16,10 @@ import '../../shared/providers/providers.dart';
 import 'services/course_tracker.dart';
 import 'widgets/map_bottom_sheet.dart';
 import 'basemap.dart';
+import '../../shared/widgets/location_prompt.dart';
 import 'widgets/network_layers.dart';
 import '../ai/widgets/ai_concierge_sheet.dart';
+import '../ai/services/kimi_ai_service.dart' show aiConfigured;
 import '../../routing/conditions.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
@@ -41,6 +43,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   double _currentZoom = _defaultZoom;
   bool _mapReady = false;
   int _offRouteStrikes = 0;
+  int _arrivalHits = 0;
   DateTime? _lastRerouteAt;
   LatLng? _smoothedUserLocation;
   LatLng? _lastRawLocation;
@@ -59,8 +62,12 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   /// The map sheet's current size, so the controls ride just above it.
   final _sheetExtent = ValueNotifier<double>(AppDims.sheetIdle);
 
+  /// The camera move in flight; a new move replaces it.
+  AnimationController? _move;
+
   @override
   void dispose() {
+    _move?.dispose();
     _sheetExtent.dispose();
     _routeReveal.dispose();
     super.dispose();
@@ -119,7 +126,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     final lngTween = Tween<double>(begin: cam.center.longitude, end: dest.longitude);
     final zoomTween = Tween<double>(begin: cam.zoom, end: zoom);
 
-    final controller = AnimationController(
+    _move?.dispose();
+    final controller = _move = AnimationController(
       duration: const Duration(milliseconds: 650),
       vsync: this,
     );
@@ -130,10 +138,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         LatLng(latTween.evaluate(curve), lngTween.evaluate(curve)),
         zoomTween.evaluate(curve),
       );
-    });
-
-    controller.addStatusListener((status) {
-      if (status == AnimationStatus.completed) controller.dispose();
     });
 
     controller.forward();
@@ -184,7 +188,16 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     return Scaffold(
       body: networkAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text("Couldn't load the +15 map."),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: () => ref.invalidate(networkProvider),
+              child: const Text('Try again'),
+            ),
+          ]),
+        ),
         data: (network) {
           final buildings = network.buildings;
           final buildingMap = network.buildingById;
@@ -427,14 +440,21 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     if (!session.isActive || session.destinationId == null || route == null) {
       return;
     }
-    if (_tracker?.route != route) _tracker = CourseTracker(route);
+    // Arrival sticks until the user closes the route.
+    if (session.status == NavigationStatus.arrived) return;
+    if (_tracker?.route != route) {
+      _tracker = CourseTracker(route);
+      _arrivalHits = 0;
+    }
     final progress = _tracker!.progressAt(user);
 
     // Indoor GPS downtown is often 20–40 m off; only treat clearly distant
     // fixes as off-route.
     if (progress.offRouteM <= 35) {
       _offRouteStrikes = 0;
-      final arrived = progress.remainingM <= 20;
+      // Two fixes in a row near the end, so one stray fix can't "arrive".
+      _arrivalHits = progress.remainingM <= 20 ? _arrivalHits + 1 : 0;
+      final arrived = _arrivalHits >= 2;
       ref.read(navigationSessionProvider.notifier).update(
             session.copyWith(
               status: arrived ? NavigationStatus.arrived : NavigationStatus.onCourse,
@@ -456,6 +476,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           ),
         );
     if (_offRouteStrikes < 2) return;
+    // A vague fix (common indoors) would reroute you out onto the street.
+    if (user is LocationFix && user.accuracyM > 25) return;
     if (_lastRerouteAt != null &&
         DateTime.now().difference(_lastRerouteAt!) < const Duration(seconds: 4)) {
       return;
@@ -471,8 +493,21 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       profile: session.profile,
       at: calgaryNow(),
     );
-    if (!result.ok) return;
-    final reroute = result.route!;
+    final reroute = result.route;
+    if (reroute == null || reroute.previewOnly) {
+      // Keep the current route; say why instead of "re-routing" forever.
+      ref
+          .read(navigationSessionProvider.notifier)
+          .update(session.copyWith(status: NavigationStatus.onCourse, offRouteStrikes: 0));
+      _offRouteStrikes = 0;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(reroute == null
+                ? (result.unavailableReason ?? "Can't find a new route from here.")
+                : "Can't re-route right now. Head back to the line on the map.")));
+      }
+      return;
+    }
     ref.read(activeRouteProvider.notifier).state = reroute;
     ref.read(navigationSessionProvider.notifier).update(
           session.copyWith(
@@ -734,7 +769,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
-        // The primary way to find a place, with Ask AI alongside.
+        // The primary way to find a place, with Ask +15 alongside.
         _FloatingSurface(
           child: SizedBox(
             height: 52,
@@ -765,20 +800,22 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: TextButton.icon(
-                    onPressed: () => showAiConcierge(context),
-                    icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-                    label: const Text('Ask AI'),
-                    style: TextButton.styleFrom(
-                      backgroundColor: scheme.primaryContainer,
-                      foregroundColor: scheme.onPrimaryContainer,
-                      minimumSize: const Size(0, 40),
-                      shape: const StadiumBorder(),
+                if (aiConfigured)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: TextButton.icon(
+                      onPressed: () => showAiConcierge(context),
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                      label: const Text('Ask +15'),
+                      style: TextButton.styleFrom(
+                        backgroundColor: scheme.primaryContainer,
+                        foregroundColor: scheme.onPrimaryContainer,
+                        minimumSize: const Size(0, 44),
+                        tapTargetSize: MaterialTapTargetSize.padded,
+                        shape: const StadiumBorder(),
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -1012,13 +1049,19 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         ),
         const SizedBox(height: AppSpacing.sm),
         _FloatingSurface(
-          child: _controlBtn(Icons.my_location_rounded, 'My location', () {
+          child: _controlBtn(Icons.my_location_rounded, 'My location', () async {
             final pos = _smoothedUserLocation ?? userLocation.valueOrNull;
             if (pos != null && _isInCalgaryBounds(pos.latitude, pos.longitude)) {
               _animatedMove(pos, 16.5);
-            } else {
-              _animatedMove(_plus15Center, 15.8);
+              return;
             }
+            if (pos == null && !await ensureLocation(this.context, ref)) return;
+            if (!mounted) return;
+            if (pos != null) {
+              ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(
+                  content: Text("You're outside downtown. Showing the +15 network.")));
+            }
+            _animatedMove(_plus15Center, 15.8);
           }, accent: true),
         ),
       ],

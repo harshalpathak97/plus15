@@ -9,9 +9,20 @@ class LocalStorage {
 
   Future<void> init() async {
     await Hive.initFlutter();
-    await Hive.openBox<String>(_routesBox);
-    await Hive.openBox<dynamic>(_prefsBox);
-    await Hive.openBox<String>(_placesBox);
+    await _open<String>(_routesBox);
+    await _open<dynamic>(_prefsBox);
+    await _open<String>(_placesBox);
+  }
+
+  /// A corrupt box must not keep the app on the splash screen: drop it and
+  /// start that box empty.
+  static Future<void> _open<T>(String name) async {
+    try {
+      await Hive.openBox<T>(name);
+    } catch (_) {
+      await Hive.deleteBoxFromDisk(name);
+      await Hive.openBox<T>(name);
+    }
   }
 
   /// 'light' (default) or 'dark'.
@@ -36,9 +47,15 @@ class LocalStorage {
 
   List<SavedRoute> getSavedRoutes() {
     final box = Hive.box<String>(_routesBox);
-    return box.values
-        .map((e) => SavedRoute.fromJson(json.decode(e)))
-        .toList()
+    final routes = <SavedRoute>[];
+    for (final e in box.values) {
+      try {
+        routes.add(SavedRoute.fromJson(json.decode(e)));
+      } catch (_) {
+        // Skip an entry this version can't read rather than lose them all.
+      }
+    }
+    return routes
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
@@ -95,6 +112,13 @@ class LocalStorage {
     final box = Hive.box<dynamic>(_prefsBox);
     await box.put('debugGraph', value);
   }
+
+  /// The user agreed to send Ask +15 questions to the AI provider.
+  bool getAiConsent() =>
+      Hive.box<dynamic>(_prefsBox).get('aiConsent', defaultValue: false) as bool;
+
+  Future<void> setAiConsent(bool value) =>
+      Hive.box<dynamic>(_prefsBox).put('aiConsent', value);
 
   bool getOnboardingComplete() {
     final box = Hive.box<dynamic>(_prefsBox);

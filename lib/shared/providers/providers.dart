@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -193,13 +194,16 @@ class NavigationSessionNotifier extends StateNotifier<NavigationSession> {
   NavigationSessionNotifier() : super(const NavigationSession());
 
   void start({required PlannedRoute route}) {
+    // No hops: start and destination share a concourse, so you're there.
+    final there = route.hops.isEmpty;
     state = NavigationSession(
       isActive: true,
       destinationId: route.destinationBuildingId,
       profile: route.profile,
-      status: NavigationStatus.onCourse,
+      status: there ? NavigationStatus.arrived : NavigationStatus.onCourse,
       totalDistanceM: route.lengthM,
-      remainingDistanceM: route.lengthM,
+      remainingDistanceM: there ? 0 : route.lengthM,
+      stepIndex: there ? route.steps.length - 1 : 0,
     );
   }
 
@@ -217,17 +221,50 @@ final navigationSessionProvider =
   (ref) => NavigationSessionNotifier(),
 );
 
-Future<bool> _hasLocationPermission() async {
-  final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-  if (!serviceEnabled) return false;
+/// A GPS fix with its horizontal accuracy (metres, 68% confidence).
+class LocationFix extends LatLng {
+  final double accuracyM;
+  LocationFix(Position p)
+      : accuracyM = p.accuracy,
+        super(p.latitude, p.longitude);
+}
 
+/// Whether we may read location. Never shows the OS prompt: that only
+/// happens from an explicit tap, via [requestLocationAccess].
+Future<bool> _hasLocationPermission() async {
+  if (!await Geolocator.isLocationServiceEnabled()) return false;
+  final permission = await Geolocator.checkPermission();
+  return permission == LocationPermission.always ||
+      permission == LocationPermission.whileInUse;
+}
+
+/// Why location isn't available, for the "Turn on" prompt.
+enum LocationBlock { none, serviceOff, denied, deniedForever }
+
+/// Asks for location from a user tap. Returns what still blocks it, and
+/// refreshes [locationStreamProvider] when access was granted.
+Future<LocationBlock> requestLocationAccess(WidgetRef ref) async {
+  if (!await Geolocator.isLocationServiceEnabled()) return LocationBlock.serviceOff;
   var permission = await Geolocator.checkPermission();
   if (permission == LocationPermission.denied) {
     permission = await Geolocator.requestPermission();
   }
-  return permission == LocationPermission.always ||
-      permission == LocationPermission.whileInUse;
+  switch (permission) {
+    case LocationPermission.always:
+    case LocationPermission.whileInUse:
+      ref.invalidate(locationStreamProvider);
+      return LocationBlock.none;
+    case LocationPermission.deniedForever:
+      return LocationBlock.deniedForever;
+    default:
+      return LocationBlock.denied;
+  }
 }
+
+/// Opens the right system screen for [block].
+Future<void> openLocationSettingsFor(LocationBlock block) => block == LocationBlock.serviceOff
+    ? Geolocator.openLocationSettings()
+    : Geolocator.openAppSettings();
 
 final locationStreamProvider = StreamProvider<LatLng?>((ref) async* {
   final isNavigationActive =
@@ -248,18 +285,15 @@ final locationStreamProvider = StreamProvider<LatLng?>((ref) async* {
   );
   final settings = isNavigationActive ? activeSettings : passiveSettings;
 
+  // Show the last known spot at once; a fresh fix can take a while indoors.
   try {
-    final initial = await Geolocator.getCurrentPosition(
-      locationSettings: settings,
-    );
-    yield LatLng(initial.latitude, initial.longitude);
-  } catch (_) {
-    yield null;
-  }
+    final last = await Geolocator.getLastKnownPosition();
+    if (last != null) yield LocationFix(last);
+  } catch (_) {}
 
-  yield* Geolocator.getPositionStream(locationSettings: settings).map(
-    (pos) => LatLng(pos.latitude, pos.longitude),
-  );
+  yield* Geolocator.getPositionStream(locationSettings: settings)
+      .map<LatLng?>(LocationFix.new)
+      .handleError((_) {});
 });
 
 /// The base map style under the +15 overlay (persisted).
@@ -280,7 +314,7 @@ final basemapProvider = StateNotifierProvider<BasemapNotifier, Basemap>(
 /// Shows the routing graph (nodes, edges, sources, confidence) on the map.
 class DebugGraphNotifier extends StateNotifier<bool> {
   final LocalStorage _storage;
-  DebugGraphNotifier(this._storage) : super(_storage.getDebugGraph());
+  DebugGraphNotifier(this._storage) : super(kDebugMode && _storage.getDebugGraph());
 
   Future<void> setEnabled(bool value) async {
     state = value;

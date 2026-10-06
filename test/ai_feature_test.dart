@@ -58,6 +58,17 @@ Scotia Centre is located on 7th Avenue SW.
       expect(parsed.text, isNot(contains('[ACTION')));
     });
 
+    test('Reads tag fields in any order and hides malformed tags', () {
+      const rawText = 'Try Analog.\n[ACTION:NAVIGATE|place=Analog Coffee|to=Bankers Hall]\n'
+          '[ACTION:NAVIGATE|from=current]';
+      final parsed =
+          AiMessage.parseActions(AiMessage(id: '5', text: rawText, isUser: false, timestamp: t));
+      expect(parsed.offers.single.to, 'Bankers Hall');
+      expect(parsed.offers.single.place, 'Analog Coffee');
+      expect(parsed.offers.single.from, 'current');
+      expect(parsed.text, 'Try Analog.');
+    });
+
     test('Leaves regular messages unchanged', () {
       const rawText = 'Calgary +15 is open from 6am to 6pm on weekdays.';
       final parsed =
@@ -245,7 +256,8 @@ Scotia Centre is located on 7th Avenue SW.
         expect(find.text('Show on map'), findsOneWidget);
         expect(find.text('Reasoning'), findsOneWidget);
         expect(find.text('Answered by fallback model'), findsOneWidget);
-        expect(find.textContaining("Kimi is busy on NVIDIA's servers."), findsOneWidget);
+        expect(find.text('Still thinking. This can take up to a minute.'), findsOneWidget);
+        expect(find.text('Report'), findsNWidgets(2)); // every finished answer
         expect(find.text('Get a quick answer'), findsOneWidget);
       });
     }

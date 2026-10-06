@@ -15,6 +15,7 @@ import '../../../routing/router.dart';
 import '../../route_planner/widgets/step_list.dart';
 import '../../shop_detail/shop_detail_sheet.dart';
 import '../../ai/widgets/ai_concierge_sheet.dart';
+import '../../ai/services/kimi_ai_service.dart' show aiConfigured;
 import '../../transit/street_directions.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/brand_logo.dart';
@@ -329,7 +330,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
       const SizedBox(height: AppSpacing.md),
       _popularBrands(context, shops),
       const SizedBox(height: AppSpacing.xl),
-      _askAiCard(context),
+      if (aiConfigured) _askAiCard(context),
       if (routines.isNotEmpty) ...[
         const SizedBox(height: AppSpacing.xl),
         const SectionHeader('Quick routes'),
@@ -484,7 +485,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
                     Text('Ask +15',
                         style: theme.textTheme.titleMedium
                             ?.copyWith(color: scheme.onPrimaryContainer)),
-                    Text('“Where’s coffee near Bankers Hall?” Powered by Kimi.',
+                    Text('“Where’s coffee near Bankers Hall?”',
                         style: theme.textTheme.bodySmall
                             ?.copyWith(color: scheme.onPrimaryContainer)),
                   ],

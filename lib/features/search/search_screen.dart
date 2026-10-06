@@ -13,6 +13,7 @@ import '../../shared/widgets/app_pill.dart';
 import '../../shared/widgets/brand_logo.dart';
 import '../../shared/widgets/section_header.dart';
 import '../ai/widgets/ai_concierge_sheet.dart';
+import '../ai/services/kimi_ai_service.dart' show aiConfigured;
 import '../shop_detail/shop_detail_sheet.dart';
 
 /// Search places and buildings on the +15.
@@ -169,19 +170,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           Text(
             _openNow
                 ? 'Open now only includes places with listed hours. Try clearing filters.'
-                : 'Try another name, or ask the +15 assistant.',
+                : aiConfigured
+                    ? 'Try another name, or Ask +15.'
+                    : 'Try another name or category.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
-          const SizedBox(height: AppSpacing.lg),
-          Center(
-            child: OutlinedButton.icon(
-              onPressed: () => showAiConcierge(context,
-                  initialPrompt: query.isEmpty ? null : 'Where can I find $query on the +15?'),
-              icon: const Icon(Icons.auto_awesome_rounded),
-              label: const Text('Ask +15'),
+          if (aiConfigured) ...[
+            const SizedBox(height: AppSpacing.lg),
+            Center(
+              child: OutlinedButton.icon(
+                onPressed: () => showAiConcierge(context,
+                    initialPrompt: query.isEmpty ? null : 'Where can I find $query on the +15?'),
+                icon: const Icon(Icons.auto_awesome_rounded),
+                label: const Text('Ask +15'),
+              ),
             ),
-          ),
+          ],
         ],
       );
     }

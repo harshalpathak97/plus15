@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../shared/providers/providers.dart';
 import '../../features/map/map_screen.dart';
 import '../../features/search/search_screen.dart';
 import '../../features/route_planner/route_screen.dart';
@@ -125,14 +127,38 @@ const _navItems = [
       'Saved'),
 ];
 
-class ScaffoldWithNav extends StatelessWidget {
+class ScaffoldWithNav extends ConsumerWidget {
   final StatefulNavigationShell shell;
 
   const ScaffoldWithNav({super.key, required this.shell});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final selected = _navItems.indexWhere((i) => i.isSelected(shell.currentIndex));
+    final onMap = shell.currentIndex == _Branch.explore;
+    final building = ref.watch(selectedBuildingProvider);
+    // A previewed route closes with back; live navigation keeps running.
+    final preview = ref.watch(activeRouteProvider) != null &&
+        !ref.watch(navigationSessionProvider.select((s) => s.isActive));
+    // Android back: other tabs return to the map, the map first closes what
+    // is open on it, and only then does the app close.
+    return PopScope(
+      canPop: onMap && building == null && !preview,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (!onMap) {
+          shell.goBranch(_Branch.explore);
+        } else if (building != null) {
+          ref.read(selectedBuildingProvider.notifier).state = null;
+        } else {
+          ref.read(activeRouteProvider.notifier).state = null;
+        }
+      },
+      child: _scaffold(context, selected),
+    );
+  }
+
+  Widget _scaffold(BuildContext context, int selected) {
     return Scaffold(
       body: shell,
       bottomNavigationBar: DecoratedBox(
