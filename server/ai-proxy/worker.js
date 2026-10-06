@@ -4,7 +4,7 @@ const UPSTREAM = 'https://integrate.api.nvidia.com/v1/chat/completions';
 const MODELS = new Set(['moonshotai/kimi-k3', 'openai/gpt-oss-20b', 'meta/llama-3.2-11b-vision-instruct']);
 const ROLES = new Set(['system', 'user', 'assistant']);
 const MAX_MESSAGES = 20;
-const MAX_CHARS = 100_000; // real system prompt is ~14k; 9 turns of history on top
+const MAX_CHARS = 40_000; // real system prompt is ~16k; 9 turns of history on top
 const MAX_TOKENS = 1600;
 
 /** The upstream body built from allowed fields only, or null if [body] isn't one the app sends. */
@@ -30,8 +30,29 @@ export function validate(body) {
 
 const fail = (status) => new Response(null, { status });
 
+/** Upstream calls allowed per UTC day across all users (override with the DAILY_CAP var). */
+const DAILY_CAP = 2000;
+
+/**
+ * True when today's global budget is spent; otherwise counts this request.
+ * Skipped when no USAGE KV namespace is bound (local dev, tests).
+ * ponytail: KV read-then-write undercounts under bursts and allows ~1 write/s
+ * per key; move to a Durable Object counter if the cap must be exact.
+ */
+export async function overDailyCap(env, ctx) {
+  if (!env.USAGE) return false;
+  const key = `day:${new Date().toISOString().slice(0, 10)}`;
+  const used = Number(await env.USAGE.get(key)) || 0;
+  // DAILY_CAP = "0" is a kill switch.
+  if (used >= (env.DAILY_CAP != null ? Number(env.DAILY_CAP) : DAILY_CAP)) return true;
+  const put = env.USAGE.put(key, String(used + 1), { expirationTtl: 172_800 }).catch(() => {});
+  if (ctx?.waitUntil) ctx.waitUntil(put);
+  else await put;
+  return false;
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (new URL(request.url).pathname !== '/v1/chat/completions') return fail(404);
     if (request.method !== 'POST') return fail(405);
     const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
@@ -45,6 +66,7 @@ export default {
       body = null;
     }
     if (!body) return fail(400);
+    if (await overDailyCap(env, ctx)) return fail(429);
 
     const res = await fetch(UPSTREAM, {
       method: 'POST',

@@ -96,7 +96,7 @@ class AlertsScreen extends ConsumerWidget {
               ),
             ),
           const SizedBox(height: AppSpacing.xl),
-          _heading(theme, 'About the data', unresolved.length + 2),
+          _heading(theme, 'About the data', unresolved.isEmpty ? 2 : 3),
           const SizedBox(height: AppSpacing.md),
           _note(theme,
               'The +15 is two networks. The downtown core (Bankers Hall, The CORE, Bow Valley '
@@ -106,8 +106,10 @@ class AlertsScreen extends ConsumerWidget {
           _note(theme,
               'The link between Castell Building and Bow Valley College South Campus is on the '
               'official City map but not in City walkway data. Routes that use it say so.'),
-          for (final u in unresolved)
-            _note(theme, '${u['name']}: ${u['reason']}'),
+          if (unresolved.isNotEmpty)
+            _note(theme,
+                'Not routable yet: ${unresolved.map((u) => u['name']).join(', ')}. They are on the '
+                'City map, but where they join the +15 isn’t in City data.'),
         ],
       ).animate().fadeIn(duration: AppMotion.normal),
     );

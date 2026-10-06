@@ -176,9 +176,11 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
     final go = GoRouter.of(context);
     final messenger = ScaffoldMessenger.of(context);
     final router = await ref.read(routerProvider.future);
+    if (!mounted) return;
     final result = router.route(RouteOrigin.building(r.fromId), r.toId,
         profile: profileFromName(r.routeType), at: calgaryNow());
-    final route = result.route;
+    // A route only blocked by a closure is still worth previewing.
+    final route = result.route ?? result.viaClosed;
     if (route == null) {
       messenger.showSnackBar(SnackBar(content: Text(result.unavailableReason ?? 'Route unavailable.')));
       return;
@@ -186,8 +188,10 @@ class _SavedRoutesScreenState extends ConsumerState<SavedRoutesScreen> {
     ref.read(activeRouteProvider.notifier).state = route;
     if (route.previewOnly) {
       ref.read(navigationSessionProvider.notifier).stop();
-      messenger.showSnackBar(const SnackBar(
-          content: Text('The +15 is closed now. Showing the route so you can plan ahead.')));
+      messenger.showSnackBar(SnackBar(
+          content: Text(route.opensAt != null
+              ? 'The +15 is closed now. Showing the route so you can plan ahead.'
+              : 'This route goes through a closed bridge. Preview only.')));
     } else {
       ref.read(navigationSessionProvider.notifier).start(route: route);
     }

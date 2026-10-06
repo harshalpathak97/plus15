@@ -40,6 +40,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // The query can be set from elsewhere (map pills) while this tab sleeps.
+    ref.listen(searchQueryProvider, (_, q) {
+      if (_controller.text != q) _controller.text = q;
+    });
     final query = ref.watch(searchQueryProvider).trim().toLowerCase();
     final category = ref.watch(selectedCategoryProvider);
     final shops = ref.watch(shopsProvider).valueOrNull;

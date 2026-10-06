@@ -57,6 +57,8 @@ the app: anything in the APK can be extracted. Deploy the proxy once:
 
 ```bash
 cd server/ai-proxy
+npx wrangler login
+npx wrangler kv namespace create USAGE   # paste the id into wrangler.toml
 npx wrangler secret put NVIDIA_API_KEY   # paste the nvapi-... key
 npx wrangler deploy
 node test.mjs                            # request-validation checks
@@ -68,12 +70,16 @@ and pass it in:
 
 ```bash
 flutter run --dart-define-from-file=secrets.json
-flutter build apk --release --dart-define-from-file=secrets.json
+# Play upload (Flutter 3.47+, targets API 36 with 16 KB-aligned libraries):
+flutter build appbundle --release --dart-define-from-file=secrets.json \
+  --obfuscate --split-debug-info=build/symbols
 ```
 
-Builds without a URL still work; the Ask AI sheet says it isn't set up. The
-proxy only accepts the app's models, caps size and tokens, and rate-limits per
-IP. It sends no CORS headers, so Ask AI works in the Android/iOS apps, not the
+Keep `build/symbols` for each release to read obfuscated crash stacks. Builds
+without a URL still work; every Ask +15 entry point is hidden. The proxy only
+accepts the app's models, caps size and tokens, rate-limits per IP, and stops
+after `DAILY_CAP` requests a day across all users (`DAILY_CAP = "0"` turns AI
+off without an app update). It sends no CORS headers, so Ask AI works in the Android/iOS apps, not the
 web build.
 
 Release signing: create an upload keystore and `android/key.properties`

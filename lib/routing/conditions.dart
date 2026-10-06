@@ -81,11 +81,8 @@ class Closure {
 bool isAlbertaHoliday(DateTime d) {
   final y = d.year, m = d.month, day = d.day;
   DateTime nthMonday(int month, int n) {
-    var x = DateTime(y, month, 1);
-    while (x.weekday != DateTime.monday) {
-      x = x.add(const Duration(days: 1));
-    }
-    return x.add(Duration(days: 7 * (n - 1)));
+    final first = DateTime(y, month, 1).weekday; // calendar maths: DST-safe
+    return DateTime(y, month, 1 + (DateTime.monday - first) % 7 + 7 * (n - 1));
   }
 
   bool same(DateTime a) => a.month == m && a.day == day;
@@ -158,10 +155,12 @@ class Conditions {
     }
     // Find the next opening (search up to a week ahead).
     for (var i = 0; i < 8; i++) {
-      final d = day.add(Duration(days: i));
+      // Calendar arithmetic, not Duration: these are Calgary wall-clock
+      // values in the device's zone, whose DST night may differ.
+      final d = DateTime(day.year, day.month, day.day + i);
       if (_closedDate(d)) continue;
       final w = _window(d);
-      final open = d.add(Duration(minutes: w[0]));
+      final open = DateTime(d.year, d.month, d.day, 0, w[0]);
       if (open.isAfter(t)) {
         final when = i == 0
             ? 'today'

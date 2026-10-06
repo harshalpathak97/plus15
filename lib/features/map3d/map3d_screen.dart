@@ -55,6 +55,14 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
   // Smoothed live-progress target so the camera glides, not jumps.
   double _liveT = 0;
 
+  /// The free view stops repainting once it's still, to save battery.
+  final _sinceWake = Stopwatch()..start();
+
+  void _wake() {
+    _sinceWake.reset();
+    if (!_ticker.isAnimating) _ticker.forward();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -83,7 +91,12 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
     final path = _routePath;
     switch (_mode) {
       case _Mode.free:
-        if (!_interacted) _camera.yaw += dt * 0.05; // slow idle orbit
+        // Orbit slowly for a while, then rest until touched.
+        if (_sinceWake.elapsed > const Duration(seconds: 30)) {
+          _ticker.stop();
+          return;
+        }
+        if (!_interacted) _camera.yaw += dt * 0.05;
       case _Mode.flythrough:
         if (path == null) break;
         if (_playing) {
@@ -141,6 +154,7 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
 
   void _resetCamera() {
     HapticFeedback.lightImpact();
+    _wake();
     _interacted = false;
     final path = _routePath;
     if (path != null) {
@@ -165,12 +179,14 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
   // --- Gestures ------------------------------------------------------------
 
   void _onScaleStart(ScaleStartDetails d) {
+    _wake();
     _interacted = true;
     _startDistance = _camera.distance;
     _startYaw = _camera.yaw;
   }
 
   void _onScaleUpdate(ScaleUpdateDetails d) {
+    _sinceWake.reset();
     if (d.pointerCount >= 2) {
       _camera.distance = _startDistance / d.scale;
       _camera.yaw = _startYaw - d.rotation;
@@ -220,8 +236,17 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen>
       _routeSource = route;
       final path = RoutePath3D.fromLatLng(points);
       if (path.isUsable) _enterRouteMode(path, wantLive);
+      _wake();
     } else if (wantLive && _mode == _Mode.flythrough) {
       _mode = _Mode.live;
+    } else if (!wantLive && _mode == _Mode.live) {
+      _mode = _Mode.flythrough; // navigation stopped; the route stays shown
+    } else if (!wantRoute && _routePath != null) {
+      // Route cleared: back to the free view of the whole network.
+      _routePath = null;
+      _routeSource = null;
+      _mode = _Mode.free;
+      _wake();
     }
 
     return Scaffold(

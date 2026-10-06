@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -65,8 +66,20 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   /// The camera move in flight; a new move replaces it.
   AnimationController? _move;
 
+  /// Rebuilds once a minute so "Open until 9 p.m." and closures stay current.
+  late final Timer _clock = Timer.periodic(const Duration(minutes: 1), (_) {
+    if (mounted) setState(() {});
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _clock;
+  }
+
   @override
   void dispose() {
+    _clock.cancel();
     _move?.dispose();
     _sheetExtent.dispose();
     _routeReveal.dispose();
@@ -284,7 +297,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       // REQUIRED"); style chosen with the layers control.
                       key: ValueKey('${basemap.name}-$isDark'),
                       urlTemplate: basemap.url(isDark),
-                      userAgentPackageName: 'com.plus15.navigator',
+                      userAgentPackageName: 'com.plus15.plus15_navigator',
                       maxNativeZoom: basemap.maxNativeZoom,
                       maxZoom: 20,
                       tileDisplay: const TileDisplay.fadeIn(),
@@ -356,7 +369,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           child: Text(
                             basemap.attribution,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                 fontSize: 10, color: darkSurface ? Colors.white70 : Colors.black87),
@@ -990,12 +1003,22 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   void _saveArrival(NavigationSession session) {
     final route = ref.read(activeRouteProvider);
-    final fromId = route?.originBuildingId;
-    if (route == null || fromId == null) {
+    final network = ref.read(networkProvider).valueOrNull;
+    // Trips from "My location" save from the first +15 building walked through.
+    final fromId = route?.originBuildingId ??
+        (route == null || route.hops.isEmpty
+            ? null
+            : network?.buildingsAtNode[route.hops.first.fromNode]?.firstOrNull?.id ??
+                network?.buildingsAtNode[route.hops.first.toNode]?.firstOrNull?.id);
+    if (route == null || fromId == null || fromId == route.destinationBuildingId) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("This trip has no start building to save. Plan it in Navigate to save it.")));
+      }
       _stopNavigation();
       return;
     }
-    final bMap = ref.read(networkProvider).valueOrNull?.buildingById ?? const {};
+    final bMap = network?.buildingById ?? const {};
     final toId = route.destinationBuildingId;
     final now = calgaryNow();
     ref.read(savedRoutesProvider.notifier).add(

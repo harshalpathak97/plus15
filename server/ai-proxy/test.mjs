@@ -1,6 +1,6 @@
 // node server/ai-proxy/test.mjs
 import assert from 'node:assert/strict';
-import worker, { validate } from './worker.js';
+import worker, { validate, overDailyCap } from './worker.js';
 
 const ok = { model: 'moonshotai/kimi-k3', messages: [{ role: 'user', content: 'hi' }] };
 
@@ -25,7 +25,7 @@ for (const bad of [
   { ...ok, messages: [{ role: 'user', content: { a: 1 } }] },
   { ...ok, messages: [null] },
   { ...ok, messages: Array(21).fill({ role: 'user', content: 'x' }) },
-  { ...ok, messages: [{ role: 'user', content: 'x'.repeat(100_001) }] },
+  { ...ok, messages: [{ role: 'user', content: 'x'.repeat(40_001) }] },
 ]) assert.equal(validate(bad), null, JSON.stringify(bad)?.slice(0, 80));
 
 // Routing, method, rate limit, bad JSON — upstream is never reached for these.
@@ -49,5 +49,18 @@ assert.equal(r.status, 502);
 assert.equal(await r.text(), '');
 assert.equal(sent.init.headers.Authorization, 'Bearer k');
 assert.equal(JSON.parse(sent.init.body).stream, true);
+
+// Global daily cap: counts valid requests, refuses once spent, skipped without KV.
+const kv = () => {
+  const m = new Map();
+  return { get: async (k) => m.get(k) ?? null, put: async (k, v) => void m.set(k, v) };
+};
+assert.equal(await overDailyCap({}), false);
+const capped = { USAGE: kv(), DAILY_CAP: '2' };
+assert.equal(await overDailyCap(capped), false);
+assert.equal(await overDailyCap(capped), false);
+assert.equal(await overDailyCap(capped), true);
+const spent = { ...env(), USAGE: kv(), DAILY_CAP: '0' };
+assert.equal((await worker.fetch(req('/v1/chat/completions', post(JSON.stringify(ok))), spent)).status, 429);
 
 console.log('ai-proxy: all checks passed');

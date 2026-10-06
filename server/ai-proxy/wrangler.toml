@@ -10,3 +10,9 @@ compatibility_date = "2026-09-01"
 name = "LIMITER"
 namespace_id = "1501"
 simple = { limit = 20, period = 60 }
+
+# Global daily budget (see DAILY_CAP in worker.js). Create the namespace with
+# `wrangler kv namespace create USAGE` and paste its id here before deploying.
+# [[kv_namespaces]]
+# binding = "USAGE"
+# id = "<from wrangler kv namespace create USAGE>"

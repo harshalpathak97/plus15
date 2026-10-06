@@ -32,9 +32,11 @@ enum Basemap {
   bool darkSurface(bool isDark) =>
       this == Basemap.satellite || (this == Basemap.map && isDark);
 
+  /// Shown on the map. "Powered by Esri" is required by Esri's terms; the
+  /// OpenStreetMap credit also covers the fallback tiles and our door data.
   String get attribution => this == Basemap.satellite
-      ? 'Tiles © Esri · Maxar, Earthstar Geographics'
-      : 'Tiles © Esri · HERE, Garmin, © OpenStreetMap contributors';
+      ? 'Powered by Esri · Maxar, Earthstar Geographics · © OpenStreetMap contributors'
+      : 'Powered by Esri · HERE, Garmin · © OpenStreetMap contributors';
 
   static Basemap fromName(String? name) =>
       Basemap.values.firstWhere((b) => b.name == name, orElse: () => Basemap.map);
