@@ -102,7 +102,7 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         titleTextStyle: text.titleLarge,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 0,
         margin: EdgeInsets.zero,
         color: card,
@@ -239,7 +239,7 @@ class AppTheme {
         dragHandleSize: const Size(36, 4),
         shape: const RoundedRectangleBorder(borderRadius: AppRadii.rSheetTop),
       ),
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         backgroundColor: card,
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(24))),
