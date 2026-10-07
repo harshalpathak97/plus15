@@ -1,0 +1,684 @@
+{
+  "schemaVersion": 2,
+  "appName": "Plus 15",
+  "themeId": "plus15-wayfinding",
+  "fontId": "inter-tight",
+  "connectedCanvas": true,
+  "locales": [
+    "en"
+  ],
+  "locale": "en",
+  "device": "android",
+  "orientation": "portrait",
+  "appIcon": "/app-icon.png",
+  "slidesByDevice": {
+    "iphone": [],
+    "android": [
+      {
+        "id": "p15-01",
+        "layout": "hero",
+        "label": {
+          "en": "01  Calgary +15"
+        },
+        "headline": {
+          "en": "Never get lost\nin the +15"
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/01-live-route.png",
+        "typography": {
+          "headlineScale": 1.25
+        },
+        "transforms": {
+          "caption": {
+            "x": 64,
+            "y": 110,
+            "width": 952,
+            "height": 430,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 120,
+            "y": 560,
+            "width": 840,
+            "height": 1820,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        },
+        "textElements": [
+          {
+            "id": "sub",
+            "text": {
+              "en": "Calgary’s indoor skywalks, mapped."
+            },
+            "transform": {
+              "x": 52,
+              "y": 440,
+              "width": 952,
+              "height": 70,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 38,
+            "fontWeight": 500,
+            "color": "#5E636B",
+            "align": "left"
+          }
+        ],
+        "imageElements": [
+          {
+            "id": "thread",
+            "src": "/decor/route-thread.svg",
+            "transform": {
+              "x": 0,
+              "y": 0,
+              "width": 8640,
+              "height": 1920,
+              "rotation": 0,
+              "zIndex": 1
+            },
+            "fit": "cover"
+          }
+        ]
+      },
+      {
+        "id": "p15-02",
+        "layout": "device-bottom",
+        "label": {
+          "en": "02  Search"
+        },
+        "headline": {
+          "en": "Find where\nyou’re going"
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/02-search.png",
+        "typography": {
+          "headlineScale": 1.25
+        },
+        "transforms": {
+          "caption": {
+            "x": 64,
+            "y": 110,
+            "width": 952,
+            "height": 430,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 300,
+            "y": 500,
+            "width": 760,
+            "height": 1646.7,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "p15-03",
+        "layout": "device-bottom",
+        "label": {
+          "en": "03  Routes"
+        },
+        "headline": {
+          "en": "Your route.\nClearly mapped."
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/03-route.png",
+        "typography": {
+          "headlineScale": 1.25
+        },
+        "transforms": {
+          "caption": {
+            "x": 64,
+            "y": 110,
+            "width": 952,
+            "height": 430,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 40,
+            "y": 500,
+            "width": 1000,
+            "height": 2166.7,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "p15-04",
+        "layout": "hero",
+        "inverted": true,
+        "label": {
+          "en": "04  Mostly indoors"
+        },
+        "headline": {
+          "en": "Stay inside.\nSkip the cold."
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/04-indoors.png",
+        "typography": {
+          "headlineScale": 1.25
+        },
+        "transforms": {
+          "caption": {
+            "x": 64,
+            "y": 150,
+            "width": 952,
+            "height": 430,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 150,
+            "y": 640,
+            "width": 780,
+            "height": 1690,
+            "rotation": 0,
+            "zIndex": 3
+          },
+          "callout": {
+            "x": 40,
+            "y": 1390,
+            "width": 1000,
+            "height": 230,
+            "rotation": 0,
+            "zIndex": 5
+          }
+        },
+        "callout": {
+          "focusX": 0.5,
+          "focusY": 0.528,
+          "zoom": 1.5,
+          "shape": "rounded"
+        }
+      },
+      {
+        "id": "p15-05",
+        "layout": "device-bottom",
+        "label": {
+          "en": "05  Step by step"
+        },
+        "headline": {
+          "en": "Know every turn"
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/05-steps.png",
+        "typography": {
+          "headlineScale": 1.25
+        },
+        "transforms": {
+          "caption": {
+            "x": 64,
+            "y": 110,
+            "width": 952,
+            "height": 430,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 130,
+            "y": 440,
+            "width": 880,
+            "height": 1906.7,
+            "rotation": -4,
+            "zIndex": 3
+          }
+        },
+        "textElements": [
+          {
+            "id": "sub",
+            "text": {
+              "en": "Every bridge, by name."
+            },
+            "transform": {
+              "x": 52,
+              "y": 300,
+              "width": 952,
+              "height": 70,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 38,
+            "fontWeight": 500,
+            "color": "#5E636B",
+            "align": "left"
+          }
+        ]
+      },
+      {
+        "id": "p15-06",
+        "layout": "device-top",
+        "label": {
+          "en": "06  Buildings"
+        },
+        "headline": {
+          "en": "See what’s\nconnected"
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/06-building.png",
+        "typography": {
+          "headlineScale": 1.25
+        },
+        "transforms": {
+          "caption": {
+            "x": 64,
+            "y": 1440,
+            "width": 952,
+            "height": 420,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 70,
+            "y": -1000,
+            "width": 940,
+            "height": 2036.7,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "p15-07",
+        "layout": "two-devices",
+        "label": {
+          "en": "07  Downtown"
+        },
+        "headline": {
+          "en": "Built for\ndowntown Calgary"
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/07-directory.png",
+        "screenshotSecondary": "/screenshots/android/phone/{locale}/07-network.png",
+        "typography": {
+          "headlineScale": 1.05
+        },
+        "transforms": {
+          "caption": {
+            "x": 64,
+            "y": 110,
+            "width": 952,
+            "height": 430,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "deviceSecondary": {
+            "x": -40,
+            "y": 600,
+            "width": 620,
+            "height": 1343.3,
+            "rotation": 0,
+            "zIndex": 2
+          },
+          "device": {
+            "x": 420,
+            "y": 700,
+            "width": 660,
+            "height": 1430,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        },
+        "textElements": [
+          {
+            "id": "sub",
+            "text": {
+              "en": "109 buildings · 141 places"
+            },
+            "transform": {
+              "x": 52,
+              "y": 390,
+              "width": 952,
+              "height": 70,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 38,
+            "fontWeight": 500,
+            "color": "#5E636B",
+            "align": "left"
+          }
+        ]
+      },
+      {
+        "id": "p15-08",
+        "layout": "hero",
+        "inverted": true,
+        "label": {
+          "en": "Calgary +15"
+        },
+        "headline": {
+          "en": "Downtown just\ngot easier."
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/01-live-route.png",
+        "typography": {
+          "headlineScale": 1.25
+        },
+        "transforms": {
+          "caption": {
+            "x": 64,
+            "y": 330,
+            "width": 952,
+            "height": 430,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 300,
+            "y": 830,
+            "width": 720,
+            "height": 1560,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        },
+        "textElements": [
+          {
+            "id": "sub",
+            "text": {
+              "en": "Navigate Calgary’s +15\nwith confidence."
+            },
+            "transform": {
+              "x": 52,
+              "y": 640,
+              "width": 600,
+              "height": 130,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 38,
+            "fontWeight": 500,
+            "color": "#A3AFB9",
+            "align": "left"
+          },
+          {
+            "id": "name",
+            "text": {
+              "en": "Plus 15"
+            },
+            "transform": {
+              "x": 200,
+              "y": 136,
+              "width": 600,
+              "height": 100,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 60,
+            "fontWeight": 800,
+            "color": "#F2F1EC",
+            "align": "left"
+          }
+        ],
+        "imageElements": [
+          {
+            "id": "icon",
+            "src": "/app-icon.png",
+            "transform": {
+              "x": 64,
+              "y": 130,
+              "width": 116,
+              "height": 116,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fit": "cover"
+          }
+        ]
+      }
+    ],
+    "ipad": [],
+    "tvos": [],
+    "watchos": [],
+    "carplay": [],
+    "mac": [],
+    "android-7": [
+      {
+        "id": "t7-01",
+        "layout": "hero",
+        "label": {
+          "en": "01  Calgary +15"
+        },
+        "headline": {
+          "en": "Never get lost\nin the +15"
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t7-02",
+        "layout": "device-bottom",
+        "label": {
+          "en": "02  Search"
+        },
+        "headline": {
+          "en": "Find where\nyou’re going"
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t7-03",
+        "layout": "device-bottom",
+        "label": {
+          "en": "03  Routes"
+        },
+        "headline": {
+          "en": "Your route.\nClearly mapped."
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t7-04",
+        "layout": "hero",
+        "label": {
+          "en": "04  Mostly indoors"
+        },
+        "headline": {
+          "en": "Stay inside.\nSkip the cold."
+        },
+        "inverted": true,
+        "screenshot": ""
+      },
+      {
+        "id": "t7-05",
+        "layout": "device-bottom",
+        "label": {
+          "en": "05  Step by step"
+        },
+        "headline": {
+          "en": "Know every turn"
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t7-06",
+        "layout": "device-bottom",
+        "label": {
+          "en": "06  Buildings"
+        },
+        "headline": {
+          "en": "See what’s\nconnected"
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t7-07",
+        "layout": "device-bottom",
+        "label": {
+          "en": "07  Downtown"
+        },
+        "headline": {
+          "en": "Built for\ndowntown Calgary"
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t7-08",
+        "layout": "hero",
+        "label": {
+          "en": "Calgary +15"
+        },
+        "headline": {
+          "en": "Downtown just\ngot easier."
+        },
+        "inverted": true,
+        "screenshot": ""
+      }
+    ],
+    "android-10": [
+      {
+        "id": "t10-01",
+        "layout": "hero",
+        "label": {
+          "en": "01  Calgary +15"
+        },
+        "headline": {
+          "en": "Never get lost\nin the +15"
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t10-02",
+        "layout": "device-bottom",
+        "label": {
+          "en": "02  Search"
+        },
+        "headline": {
+          "en": "Find where\nyou’re going"
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t10-03",
+        "layout": "device-bottom",
+        "label": {
+          "en": "03  Routes"
+        },
+        "headline": {
+          "en": "Your route.\nClearly mapped."
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t10-04",
+        "layout": "hero",
+        "label": {
+          "en": "04  Mostly indoors"
+        },
+        "headline": {
+          "en": "Stay inside.\nSkip the cold."
+        },
+        "inverted": true,
+        "screenshot": ""
+      },
+      {
+        "id": "t10-05",
+        "layout": "device-bottom",
+        "label": {
+          "en": "05  Step by step"
+        },
+        "headline": {
+          "en": "Know every turn"
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t10-06",
+        "layout": "device-bottom",
+        "label": {
+          "en": "06  Buildings"
+        },
+        "headline": {
+          "en": "See what’s\nconnected"
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t10-07",
+        "layout": "device-bottom",
+        "label": {
+          "en": "07  Downtown"
+        },
+        "headline": {
+          "en": "Built for\ndowntown Calgary"
+        },
+        "inverted": false,
+        "screenshot": ""
+      },
+      {
+        "id": "t10-08",
+        "layout": "hero",
+        "label": {
+          "en": "Calgary +15"
+        },
+        "headline": {
+          "en": "Downtown just\ngot easier."
+        },
+        "inverted": true,
+        "screenshot": ""
+      }
+    ],
+    "feature-graphic": [
+      {
+        "id": "p15-fg",
+        "layout": "feature-graphic",
+        "inverted": false,
+        "label": {
+          "en": "Calgary’s indoor skywalks, mapped."
+        },
+        "headline": {
+          "en": "Never get lost\nin the +15"
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/01-live-route.png",
+        "typography": {
+          "headlineScale": 2,
+          "appNameScale": 0.55
+        },
+        "transforms": {
+          "device": {
+            "x": 668,
+            "y": 52,
+            "width": 300,
+            "height": 650,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        },
+        "imageElements": [
+          {
+            "id": "thread",
+            "src": "/decor/route-thread-fg.svg",
+            "transform": {
+              "x": 0,
+              "y": 0,
+              "width": 1024,
+              "height": 500,
+              "rotation": 0,
+              "zIndex": 1
+            },
+            "fit": "cover"
+          }
+        ]
+      }
+    ]
+  },
+  "scene": {
+    "backdrop": "wayfinding",
+    "span": false,
+    "decoration": "none",
+    "shadow": 22,
+    "glow": 0,
+    "tilt": 0,
+    "headlineWeight": 800,
+    "headlineScale": 1,
+    "headlineCase": "as-typed",
+    "captionAlign": "left"
+  }
+}
