@@ -144,6 +144,7 @@ class ShopDetailSheet extends ConsumerWidget {
   void _navigateHere(BuildContext context, WidgetRef ref, NetBuilding target) {
     HapticFeedback.mediumImpact();
     ref.read(routeToProvider.notifier).state = target;
+    ref.read(routeToShopProvider.notifier).state = shop;
     ref.read(selectedBuildingProvider.notifier).state = null;
     final router = GoRouter.of(context);
     Navigator.of(context).pop();

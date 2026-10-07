@@ -274,6 +274,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   Widget _endpoints(
       BuildContext context, List<NetBuilding> buildings, NetBuilding? from, NetBuilding? to) {
     final scheme = Theme.of(context).colorScheme;
+    final shop = ref.watch(routeToShopProvider);
     return Material(
       color: scheme.surface,
       shape: RoundedRectangleBorder(
@@ -309,7 +310,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                   context,
                   icon: Icons.location_on_rounded,
                   color: AppPalette.destination,
-                  label: to?.name,
+                  label: shop?.name ?? to?.name,
+                  sublabel: shop == null ? null : 'in ${to?.name}',
                   placeholder: 'Choose destination',
                   onTap: () => _showBuildingPicker(context, buildings, false),
                 ),
@@ -342,6 +344,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     required IconData icon,
     required Color color,
     required String? label,
+    String? sublabel,
     required String placeholder,
     required VoidCallback onTap,
     Widget? trailing,
@@ -359,14 +362,26 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               Icon(icon, size: 20, color: color),
               const SizedBox(width: AppSpacing.lg),
               Expanded(
-                child: Text(
-                  label ?? placeholder,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: label == null ? theme.colorScheme.onSurfaceVariant : null,
-                    fontWeight: label == null ? null : FontWeight.w600,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label ?? placeholder,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: label == null ? theme.colorScheme.onSurfaceVariant : null,
+                        fontWeight: label == null ? null : FontWeight.w600,
+                      ),
+                    ),
+                    if (sublabel != null)
+                      Text(sublabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  ],
                 ),
               ),
               if (trailing != null) trailing,

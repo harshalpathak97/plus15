@@ -132,6 +132,12 @@ final routeFromProvider = StateProvider<NetBuilding?>((ref) => null);
 /// Start from the phone's location instead of [routeFromProvider].
 final routeFromMyLocationProvider = StateProvider<bool>((ref) => false);
 final routeToProvider = StateProvider<NetBuilding?>((ref) => null);
+/// The shop a route was asked for from its page; the route still ends at its
+/// building ([routeToProvider]). Any new destination clears it.
+final routeToShopProvider = StateProvider<Shop?>((ref) {
+  ref.watch(routeToProvider);
+  return null;
+});
 
 /// The route being shown/navigated: exactly the graph edges it uses.
 final activeRouteProvider = StateProvider<PlannedRoute?>((ref) => null);

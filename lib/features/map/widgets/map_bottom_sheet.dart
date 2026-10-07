@@ -139,13 +139,16 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
         : buildingMap[route.originBuildingId]?.name ?? route.originBuildingId!;
     final toName =
         buildingMap[route.destinationBuildingId]?.name ?? route.destinationBuildingId;
+    // Asked for from a shop's page: name the shop, and the building it's in.
+    final shop = ref.watch(routeToShopProvider);
+    final place = shop?.buildingId == route.destinationBuildingId ? shop!.name : null;
     final distance = route.lengthM;
     final timeMin =
         AppConstants.estimateWalkTimeMinutes(distance, speedKmh: walkingSpeed);
 
     return [
-      _routeSummary(context, fromName, toName, distance, timeMin,
-          route.bridgeCount),
+      _routeSummary(context, fromName, place ?? toName, distance, timeMin,
+          route.bridgeCount, inBuilding: place == null ? null : toName),
       if (route.previewOnly && !session.isActive) ...[
         const SizedBox(height: AppSpacing.md),
         PreviewBanner(route: route),
@@ -170,7 +173,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
   }
 
   Widget _routeSummary(BuildContext context, String from, String to,
-      double distance, double timeMin, int bridges) {
+      double distance, double timeMin, int bridges, {String? inBuilding}) {
     final theme = Theme.of(context);
     return Row(
       children: [
@@ -196,6 +199,13 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (inBuilding != null)
+                Text(
+                  'in $inBuilding',
+                  style: theme.textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               const SizedBox(height: 2),
               Text(
                 '${timeMin.ceil()} min · ${distance.round()} m · from $from',
