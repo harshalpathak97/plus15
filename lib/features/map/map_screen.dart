@@ -20,7 +20,7 @@ import 'basemap.dart';
 import '../../shared/widgets/location_prompt.dart';
 import 'widgets/network_layers.dart';
 import '../ai/widgets/ai_concierge_sheet.dart';
-import '../ai/services/kimi_ai_service.dart' show aiConfigured;
+import '../ai/services/ai_service.dart' show aiConfigured;
 import '../../routing/conditions.dart';
 
 class MapScreen extends ConsumerStatefulWidget {

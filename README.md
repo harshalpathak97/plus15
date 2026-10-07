@@ -51,15 +51,15 @@ dart run tool/build_network.dart       # rebuild network.json from tool/sources
 dart run tool/route.dart bankers_hall the_bow fastest 2026-10-15T12:00 --hops
 ```
 
-Ask AI (Kimi K3 via NVIDIA's API) goes through a small Cloudflare Worker in
-`server/ai-proxy/` that holds the NVIDIA key. The key must never be built into
+Ask +15 (Gemini via its OpenAI-compatible API) goes through a small Cloudflare Worker in
+`server/ai-proxy/` that holds the Gemini API key. The key must never be built into
 the app: anything in the APK can be extracted. Deploy the proxy once:
 
 ```bash
 cd server/ai-proxy
 npx wrangler login
 npx wrangler kv namespace create USAGE   # paste the id into wrangler.toml
-npx wrangler secret put NVIDIA_API_KEY   # paste the nvapi-... key
+npx wrangler secret put GEMINI_API_KEY   # paste the Gemini API key
 npx wrangler deploy
 node test.mjs                            # request-validation checks
 ```

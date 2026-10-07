@@ -1,7 +1,8 @@
-// Ask AI proxy: holds the NVIDIA key so it never ships in the app, and only
+// Ask +15 proxy: holds the Gemini API key so it never ships in the app, and only
 // forwards requests shaped like the app's own (our models, capped size/tokens).
-const UPSTREAM = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const MODELS = new Set(['moonshotai/kimi-k3', 'openai/gpt-oss-20b', 'meta/llama-3.2-11b-vision-instruct']);
+// Gemini's OpenAI-compatible endpoint, so the app's streaming code is unchanged.
+const UPSTREAM = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const MODELS = new Set(['gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.8-flash']);
 const ROLES = new Set(['system', 'user', 'assistant']);
 const MAX_MESSAGES = 20;
 const MAX_CHARS = 40_000; // real system prompt is ~16k; 9 turns of history on top
@@ -19,13 +20,16 @@ export function validate(body) {
   }
   if (chars > MAX_CHARS) return null;
   const num = (v, lo, hi, d) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
-  return {
+  const out = {
     model: body.model,
     messages: msgs.map(({ role, content }) => ({ role, content })),
     stream: true,
     temperature: num(body.temperature, 0, 1, 0.4),
     max_tokens: Math.round(num(body.max_tokens, 1, MAX_TOKENS, 700)),
   };
+  // Full flash models think first; keep that short so answers start quickly.
+  if (!body.model.includes('lite')) out.reasoning_effort = 'low';
+  return out;
 }
 
 const fail = (status) => new Response(null, { status });
@@ -71,7 +75,7 @@ export default {
     const res = await fetch(UPSTREAM, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.NVIDIA_API_KEY}`,
+        Authorization: `Bearer ${env.GEMINI_API_KEY}`,
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
       },

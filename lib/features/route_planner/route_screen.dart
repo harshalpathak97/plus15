@@ -16,7 +16,7 @@ import '../../shared/providers/providers.dart';
 import '../../shared/widgets/location_prompt.dart';
 import '../../shared/widgets/screen_header.dart';
 import '../ai/widgets/ai_concierge_sheet.dart';
-import '../ai/services/kimi_ai_service.dart' show aiConfigured;
+import '../ai/services/ai_service.dart' show aiConfigured;
 import '../transit/street_directions.dart';
 import 'widgets/route_option_card.dart';
 import 'widgets/step_list.dart';
@@ -515,7 +515,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
       [for (var i = 0; i < a.edgeIds.length; i++) a.edgeIds[i] == b.edgeIds[i]].every((x) => x);
 
   static IconData _profileIcon(RouteProfile p) => switch (p) {
-        RouteProfile.fastest => Icons.bolt_rounded,
+        RouteProfile.fastest => Icons.verified_rounded,
         RouteProfile.accessible => Icons.accessible_rounded,
         RouteProfile.mostlyIndoors => Icons.roofing_rounded,
       };

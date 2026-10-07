@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plus15_navigator/data/models/shop.dart';
 import 'package:plus15_navigator/features/ai/models/ai_message.dart';
-import 'package:plus15_navigator/features/ai/services/kimi_ai_service.dart';
+import 'package:plus15_navigator/features/ai/services/ai_service.dart';
 import 'package:plus15_navigator/features/ai/widgets/ai_concierge_sheet.dart';
 import 'package:plus15_navigator/routing/router.dart';
 
@@ -203,13 +203,18 @@ Scotia Centre is located on 7th Avenue SW.
     expect(sseDelta(': keep-alive'), isNull);
   });
 
+  test('resolveBuilding prefers an exact id over a longer id containing it', () {
+    expect(resolveBuilding('bankers_hall', network.buildings)?.id, 'bankers_hall');
+    expect(resolveBuilding('Bankers Hall', network.buildings)?.id, 'bankers_hall');
+  });
+
   group('sheet', () {
     Future<void> open(WidgetTester tester, Brightness brightness, List<AiMessage> messages) async {
       tester.view.physicalSize = const Size(960, 3600); // 320 x 1200: narrow, all on screen
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(ProviderScope(
-        overrides: [kimiAiProvider.overrideWith((ref) => KimiAiNotifier(ref, messages))],
+        overrides: [aiProvider.overrideWith((ref) => AiNotifier(ref, messages))],
         child: MaterialApp(
           theme: ThemeData(
             brightness: brightness,
@@ -248,7 +253,7 @@ Scotia Centre is located on 7th Avenue SW.
             text: 'It is on Stephen Avenue.',
             isUser: false,
             timestamp: t,
-            answeredBy: kimiModel,
+            answeredBy: primaryModel,
             actionType: AiActionType.focus,
             actionTarget: 'Scotia Centre',
           ),

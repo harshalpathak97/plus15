@@ -9,7 +9,9 @@ import 'network.dart';
 
 /// PlannedRoute profiles. Weights are explicit and tested (test/router_test.dart).
 enum RouteProfile {
-  fastest('Fastest'),
+  // Prefers City-verified links (see RouteWeights.likelyFactor), so it isn't
+  // always the shortest: labelled for what it is.
+  fastest('Recommended'),
   accessible('Accessible'),
   mostlyIndoors('Mostly indoors');
 

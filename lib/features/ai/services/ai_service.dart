@@ -17,28 +17,28 @@ import '../../../routing/router.dart';
 import '../../../shared/providers/providers.dart';
 import '../models/ai_message.dart';
 
-/// Our proxy in front of NVIDIA's OpenAI-compatible chat endpoint
-/// (server/ai-proxy). The NVIDIA key lives only there: anything compiled into
+/// Our proxy in front of Gemini's OpenAI-compatible chat endpoint
+/// (server/ai-proxy). The API key lives only there: anything compiled into
 /// the app can be pulled out of the APK.
 const _endpoint = String.fromEnvironment('AI_PROXY_URL');
 
-const kimiModel = 'moonshotai/kimi-k3';
+/// Fast and steady (first token in ~1 s); the answers are grounded in the
+/// facts the prompt supplies, so a lite model is enough.
+const primaryModel = 'gemini-3.5-flash-lite';
 
-/// Tried in order when Kimi fails, and straight away for a quick answer.
-const fallbackModels = ['openai/gpt-oss-20b', 'meta/llama-3.2-11b-vision-instruct'];
+/// Tried in order when the primary fails or is busy (Gemini returns 503 under
+/// load), and straight away for a quick answer.
+const fallbackModels = ['gemini-flash-lite-latest', 'gemini-3.8-flash'];
 
-/// Kimi often waits 30–70 s in NVIDIA's queue before its first token. Waiting
-/// longer than this feels broken, so the quick model answers instead (the
-/// user can also skip ahead from 6 s).
-const _kimiFirstToken = Duration(seconds: 45);
-const _fallbackFirstToken = Duration(seconds: 20);
-const _messageTimeout = Duration(seconds: 150);
+const _primaryFirstToken = Duration(seconds: 15);
+const _fallbackFirstToken = Duration(seconds: 25);
+const _messageTimeout = Duration(seconds: 90);
 
-/// How long Kimi may stay silent before the sheet offers a quick answer.
+/// How long the primary may stay silent before the sheet offers a quick answer.
 const _queuedAfter = Duration(seconds: 6);
 
-final kimiAiProvider = StateNotifierProvider<KimiAiNotifier, List<AiMessage>>(
-  (ref) => KimiAiNotifier(ref),
+final aiProvider = StateNotifierProvider<AiNotifier, List<AiMessage>>(
+  (ref) => AiNotifier(ref),
 );
 
 /// False when the build has no AI_PROXY_URL, or (release) one that isn't
@@ -47,9 +47,9 @@ final kimiAiProvider = StateNotifierProvider<KimiAiNotifier, List<AiMessage>>(
 final bool aiConfigured =
     _endpoint.isNotEmpty && (!kReleaseMode || _endpoint.startsWith('https://'));
 
-class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
+class AiNotifier extends StateNotifier<List<AiMessage>> {
   /// [messages] restores a conversation.
-  KimiAiNotifier(this._ref, [List<AiMessage> messages = const []]) : super(messages);
+  AiNotifier(this._ref, [List<AiMessage> messages = const []]) : super(messages);
 
   final Ref _ref;
 
@@ -70,7 +70,7 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
     state = const [];
   }
 
-  /// Stops waiting for a queued Kimi reply and asks the quick model instead.
+  /// Stops waiting for a slow primary reply and asks the next model instead.
   void answerQuickly() {
     final last = state.lastOrNull;
     if (last == null || !last.queued) return;
@@ -99,7 +99,7 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
         {'role': 'user', 'content': q},
       ];
       final deadline = now.add(_messageTimeout);
-      for (final m in [kimiModel, ...fallbackModels]) {
+      for (final m in [primaryModel, ...fallbackModels]) {
         if (!_alive(id) || DateTime.now().isAfter(deadline)) break;
         reply = await _stream(id, m, messages, deadline);
         if (reply != null) {
@@ -208,13 +208,13 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
   Future<String?> _stream(
       String id, String model, List<Map<String, String>> messages, DateTime deadline) async {
     final client = _client = http.Client();
-    final kimi = model == kimiModel;
+    final primary = model == primaryModel;
     final left = deadline.difference(DateTime.now());
-    final firstToken = kimi ? _kimiFirstToken : _fallbackFirstToken;
+    final firstToken = primary ? _primaryFirstToken : _fallbackFirstToken;
     final noToken = Timer(left < firstToken ? left : firstToken, client.close);
     final stop = Timer(left, client.close);
     final queued =
-        kimi ? Timer(_queuedAfter, () => _update(id, (m) => m.copyWith(queued: true))) : null;
+        primary ? Timer(_queuedAfter, () => _update(id, (m) => m.copyWith(queued: true))) : null;
     final text = StringBuffer(), reasoning = StringBuffer();
     var done = false;
     try {
@@ -228,7 +228,7 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
           'messages': messages,
           'stream': true,
           'temperature': 0.4,
-          'max_tokens': kimi ? 1600 : 700, // Kimi reasons before answering
+          'max_tokens': model.contains('lite') ? 700 : 1600, // full flash thinks first
         }));
       if (res.statusCode != 200) return null;
       await for (final line in res.stream.transform(utf8.decoder).transform(const LineSplitter())) {
@@ -258,7 +258,7 @@ class KimiAiNotifier extends StateNotifier<List<AiMessage>> {
       stop.cancel();
       queued?.cancel();
       client.close();
-      if (kimi) _update(id, (m) => m.copyWith(queued: false));
+      if (primary) _update(id, (m) => m.copyWith(queued: false));
     }
     if (text.isEmpty || _client != client) return null;
     // The connection dropped or hit the deadline mid-answer: say so rather
@@ -336,7 +336,10 @@ List<NetBuilding> matchBuildings(String text, List<NetBuilding> buildings) {
 NetBuilding? resolveBuilding(String name, List<NetBuilding> buildings) {
   final n = name.replaceAll(RegExp('["<>]'), '').trim().toLowerCase();
   if (n.length < 3 || n == 'current' || n.contains('location')) return null;
-  return matchBuildings(n, buildings).firstOrNull ??
+  // Models sometimes answer with our ids ("bankers_hall"): an exact id wins,
+  // or "contains" would pick "bankers_hall_west_parkade".
+  return buildings.firstWhereOrNull((b) => b.id == n) ??
+      matchBuildings(n, buildings).firstOrNull ??
       buildings.firstWhereOrNull(
           (b) => [b.id, b.name, ...b.aliases].any((t) => t.toLowerCase().contains(n)));
 }
@@ -392,7 +395,7 @@ const _aboutApp = [
   'Directory: every shop, restaurant and service on the +15, grouped by building, with logos.',
   'Navigate: indoor routes between buildings or from "My location". From outside the +15 a '
       'route first walks outdoors (dotted line) to the nearest street door, then up to the +15. '
-      'It offers Fastest, Accessible (step-free) and Mostly indoors options.',
+      'It offers Recommended (verified links first), Accessible (step-free) and Mostly indoors options.',
   'When the +15 is closed (weekdays 9 p.m.–6 a.m., weekends and holidays 7 p.m.–9 a.m.), '
       'routes can still be browsed and previewed for planning; live navigation starts at opening.',
   'Closed bridges are avoided; a route through one is shown as a preview only.',

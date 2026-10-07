@@ -16,7 +16,7 @@ import '../../../routing/router.dart';
 import '../../route_planner/widgets/step_list.dart';
 import '../../shop_detail/shop_detail_sheet.dart';
 import '../../ai/widgets/ai_concierge_sheet.dart';
-import '../../ai/services/kimi_ai_service.dart' show aiConfigured;
+import '../../ai/services/ai_service.dart' show aiConfigured;
 import '../../transit/street_directions.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/brand_logo.dart';

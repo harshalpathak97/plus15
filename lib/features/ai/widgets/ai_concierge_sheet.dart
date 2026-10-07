@@ -9,7 +9,7 @@ import '../../../shared/widgets/contact.dart';
 import '../../../routing/network.dart';
 import '../../../shared/providers/providers.dart';
 import '../models/ai_message.dart';
-import '../services/kimi_ai_service.dart';
+import '../services/ai_service.dart';
 
 const _quickPrompts = [
   'Coffee near Bankers Hall',
@@ -42,7 +42,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
   final _scroll = ScrollController();
   final _openReasoning = <String>{};
 
-  KimiAiNotifier get _ai => ref.read(kimiAiProvider.notifier);
+  AiNotifier get _ai => ref.read(aiProvider.notifier);
 
   /// Nothing is sent before the user agrees to share it with the AI service.
   late bool _consented = _ai.hasConsent;
@@ -69,7 +69,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
 
   /// Play policy: users can flag an offensive or harmful AI answer.
   void _report(AiMessage answer) {
-    final messages = ref.read(kimiAiProvider);
+    final messages = ref.read(aiProvider);
     final i = messages.indexOf(answer);
     final question = i > 0 ? messages[i - 1].text : '';
     openMail(
@@ -124,7 +124,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final muted = theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant);
-    final messages = ref.watch(kimiAiProvider);
+    final messages = ref.watch(aiProvider);
     final buildings = ref.watch(buildingsProvider).valueOrNull ?? const <NetBuilding>[];
     final inset = MediaQuery.viewInsetsOf(context).bottom;
 
@@ -372,7 +372,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
                   style: TextButton.styleFrom(foregroundColor: cs.onSurfaceVariant),
                 ),
               ),
-            if (kDebugMode && m.answeredBy != null && m.answeredBy != kimiModel)
+            if (kDebugMode && m.answeredBy != null && m.answeredBy != primaryModel)
               Padding(
                 padding: const EdgeInsets.only(top: AppSpacing.xs),
                 child: Text(
@@ -404,8 +404,7 @@ class _AiConciergeSheetState extends ConsumerState<_AiConciergeSheet> {
         Text('Before you ask', style: theme.textTheme.titleMedium),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Ask +15 answers with an AI model run by NVIDIA (models from Moonshot AI, OpenAI '
-          'and Meta). To answer, the app sends NVIDIA:',
+          'Ask +15 answers using a third-party AI service. To answer, the app sends it:',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: AppSpacing.md),
