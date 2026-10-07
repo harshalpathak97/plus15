@@ -174,7 +174,8 @@ void main() {
 
   test('every building name sits inside its outline on the map', () {
     for (final b in net.buildings.where((b) => b.outline.isNotEmpty)) {
-      final [y, x] = b.labelAt;
+      final (lat: y, lng: x, widthM: w) = b.label;
+      expect(w, greaterThan(5), reason: b.name);
       var inside = false;
       final o = b.outline;
       for (var i = 1; i < o.length; i++) {

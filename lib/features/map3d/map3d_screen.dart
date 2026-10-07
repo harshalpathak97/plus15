@@ -295,7 +295,6 @@ class _Map3DScreenState extends ConsumerState<Map3DScreen> with SingleTickerProv
       'arts_commons',
       'the_bow',
       'eau_claire_tower',
-      'hudsons_bay',
       'palliser_hotel',
       'centennial_place',
     };
@@ -800,65 +799,60 @@ class _NetworkPainter extends CustomPainter {
     }
   }
 
+  /// Names as on the 2D map: plain text with a halo (no pills), nearest
+  /// first, fading with distance relative to how far out the camera is.
   void _paintLabels(Canvas canvas, CameraFrame frame) {
-    final pillColor = (isDark ? AppPalette.cardDark : Colors.white).withValues(alpha: 0.85);
     final placed = <Rect>[];
+    final reach = camera.distance * 1.8;
 
-    // Nearest labels win declutter priority.
     final entries = <(double, Offset, NetBuilding)>[];
     for (final b in labelBuildings) {
       final local = Scene3D.toLocal(b.lat, b.lng);
       final d = frame.depth(local.dx, local.dy, _roofZ);
-      if (d <= CameraFrame.near || d > 1100) continue;
+      if (d <= CameraFrame.near || d > reach) continue;
       final sp = frame.project(local.dx, local.dy, _roofZ + 14);
       if (sp == null) continue;
       entries.add((d, sp, b));
     }
     entries.sort((a, b) => a.$1.compareTo(b.$1));
 
-    for (final (d, sp, b) in entries) {
-      final alpha = (1.2 - d / 1000).clamp(0.25, 1.0);
-      final tp = _labelCache.putIfAbsent('${b.id}|$isDark', () {
-        final painter = TextPainter(
+    TextPainter text(String name, Paint paint) => TextPainter(
           text: TextSpan(
-            text: b.name,
+            text: name,
             style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.1,
-              color: isDark ? AppPalette.inkDark : AppPalette.ink,
-            ),
+                fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: -0.1, foreground: paint),
           ),
+          textAlign: TextAlign.center,
           textDirection: TextDirection.ltr,
-          maxLines: 1,
+          maxLines: 2,
           ellipsis: '…',
-        )..layout(maxWidth: 150);
-        return painter;
-      });
+        )..layout(maxWidth: 130);
 
-      final rect = Rect.fromCenter(
-        center: sp,
-        width: tp.width + 18,
-        height: tp.height + 10,
-      );
-      if (placed.any((r) => r.overlaps(rect.inflate(6)))) continue;
+    for (final (d, sp, b) in entries) {
+      final alpha = (1.6 - d / camera.distance).clamp(0.35, 1.0);
+      final halo = _labelCache.putIfAbsent('${b.id}|$isDark|halo', () => text(b.name, Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..strokeJoin = StrokeJoin.round
+        ..color = isDark ? AppPalette.surfaceDark : Colors.white));
+      final fill = _labelCache.putIfAbsent('${b.id}|$isDark',
+          () => text(b.name, Paint()..color = isDark ? AppPalette.inkDark : AppPalette.ink));
+
+      final rect = Rect.fromCenter(center: sp, width: fill.width + 6, height: fill.height + 4);
+      if (placed.any((r) => r.overlaps(rect.inflate(4)))) continue;
       placed.add(rect);
 
-      canvas.saveLayer(rect.inflate(2), Paint()..color = Colors.white.withValues(alpha: alpha));
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, const Radius.circular(9)),
-        Paint()..color = pillColor,
-      );
-      tp.paint(canvas, rect.topLeft + const Offset(9, 5));
+      canvas.saveLayer(rect.inflate(3), Paint()..color = Colors.white.withValues(alpha: alpha));
+      halo.paint(canvas, rect.topLeft + const Offset(3, 2));
+      fill.paint(canvas, rect.topLeft + const Offset(3, 2));
       canvas.restore();
 
       // Anchor stem down toward the building.
-      final stemEnd = sp + const Offset(0, 18);
       canvas.drawLine(
         Offset(sp.dx, rect.bottom),
-        stemEnd,
+        sp + const Offset(0, 18),
         Paint()
-          ..color = (isDark ? Colors.white : Colors.black).withValues(alpha: 0.18 * alpha)
+          ..color = (isDark ? Colors.white : Colors.black).withValues(alpha: 0.25 * alpha)
           ..strokeWidth = 1,
       );
     }

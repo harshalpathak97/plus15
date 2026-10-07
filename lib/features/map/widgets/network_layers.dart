@@ -59,22 +59,48 @@ List<Widget> networkLayers(
   ];
 }
 
-/// Building outlines as grey blocks under the +15, like the City's map. Some
-/// buildings share an outline (a hotel in an office tower); each draws once.
-Widget buildingFootprints(Plus15Network net, {required bool isDark}) {
-  final outlines = {
-    for (final b in net.buildings)
-      if (b.outline.isNotEmpty) '${b.outline}': b.outline,
-  };
-  return PolygonLayer(polygons: [
-    for (final o in outlines.values)
-      Polygon(
-        points: [for (final p in o) _ll(p)],
-        color: isDark ? const Color(0xFF34383F) : const Color(0xFFC4C6CB),
-        borderColor: isDark ? const Color(0xFF6A707A) : const Color(0xFF4A4F57),
-        borderStrokeWidth: 0.8,
-      ),
-  ]);
+/// Building outlines as grey blocks under the +15, like the City's map; tap
+/// one to pick its building. [blocks] holds one building per outline (some
+/// outlines hold a hotel and an office tower). [selectedId] is tinted teal;
+/// the rest are [hidden] (over satellite photos) but still tappable.
+Widget buildingFootprints(
+  List<NetBuilding> blocks, {
+  bool hidden = false,
+  required String? selectedId,
+  required bool isDark,
+  required LayerHitNotifier<NetBuilding> hits,
+  required void Function(NetBuilding) onTap,
+}) {
+  final accent = isDark ? AppPalette.brandSoft : AppPalette.brand;
+  return GestureDetector(
+    onTap: () {
+      final b = hits.value?.hitValues.firstOrNull;
+      if (b != null) onTap(b);
+    },
+    child: PolygonLayer<NetBuilding>(
+      hitNotifier: hits,
+      polygons: [
+        for (final b in blocks)
+          Polygon<NetBuilding>(
+            points: [for (final p in b.outline) _ll(p)],
+            color: b.id == selectedId
+                ? accent.withValues(alpha: 0.3)
+                : hidden
+                    ? Colors.transparent
+                    : isDark
+                        ? const Color(0xFF34383F)
+                        : const Color(0xFFC4C6CB),
+            borderColor: b.id == selectedId
+                ? accent
+                : isDark
+                    ? const Color(0xFF6A707A)
+                    : const Color(0xFF4A4F57),
+            borderStrokeWidth: b.id == selectedId ? 2 : (hidden ? 0 : 0.8),
+            hitValue: b,
+          ),
+      ],
+    ),
+  );
 }
 
 /// The route exactly as routed: each hop's edge geometry, no smoothing.

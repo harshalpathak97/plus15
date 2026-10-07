@@ -101,6 +101,9 @@ class HelpScreen extends ConsumerWidget {
                 _legendRow(theme, AppPalette.skywalk, Icons.remove_rounded,
                     '+15 walkways', 'City of Calgary walkway footprints and bridges.'),
                 const SizedBox(height: AppSpacing.md),
+                _legendRow(theme, AppPalette.inkMuted, Icons.apartment_rounded, 'Buildings',
+                    'Grey blocks, named where they fit. Tap one for its shops and directions.'),
+                const SizedBox(height: AppSpacing.md),
                 _legendRow(theme, AppPalette.brand, Icons.route_rounded,
                     'Your route', 'Drawn exactly along the walkways it uses.'),
                 const SizedBox(height: AppSpacing.md),
@@ -113,7 +116,7 @@ class HelpScreen extends ConsumerWidget {
                 _legendRow(theme, AppPalette.danger, Icons.block_rounded,
                     'Closed', 'A published City closure. Routes go around it.'),
                 const SizedBox(height: AppSpacing.lg),
-                Text('Building dots', style: theme.textTheme.titleSmall),
+                Text('Building dots (zoomed out)', style: theme.textTheme.titleSmall),
                 const SizedBox(height: AppSpacing.sm),
                 Wrap(
                   spacing: AppSpacing.lg,
