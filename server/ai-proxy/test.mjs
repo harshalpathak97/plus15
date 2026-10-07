@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import worker, { validate, overDailyCap } from './worker.js';
 
-const ok = { model: 'moonshotai/kimi-k3', messages: [{ role: 'user', content: 'hi' }] };
+const ok = { model: 'gemini-3.5-flash-lite', messages: [{ role: 'user', content: 'hi' }] };
 
 // Allowed fields only, stream forced, numbers clamped.
 const v = validate({ ...ok, max_tokens: 99999, temperature: 7, stream: false, tools: [1], n: 50 });
@@ -12,13 +12,15 @@ assert.equal(v.temperature, 1);
 assert.equal(v.stream, true);
 assert.equal(validate({ ...ok, max_tokens: -5 }).max_tokens, 1);
 assert.equal(validate({ ...ok, max_tokens: 'lots' }).max_tokens, 700);
+assert.equal(validate(ok).reasoning_effort, undefined); // lite: no thinking
+assert.equal(validate({ ...ok, model: 'gemini-3.8-flash' }).reasoning_effort, 'low');
 assert.deepEqual(validate({ ...ok, messages: [{ role: 'user', content: 'x', name: 'y' }] }).messages,
   [{ role: 'user', content: 'x' }]);
 
 // Rejected shapes.
 for (const bad of [
   null, 'x', {},
-  { ...ok, model: 'meta/llama-3.1-405b-instruct' },
+  { ...ok, model: 'gemini-3.1-pro-preview' },
   { ...ok, messages: [] },
   { ...ok, messages: 'hi' },
   { ...ok, messages: [{ role: 'tool', content: 'x' }] },
@@ -29,7 +31,7 @@ for (const bad of [
 ]) assert.equal(validate(bad), null, JSON.stringify(bad)?.slice(0, 80));
 
 // Routing, method, rate limit, bad JSON — upstream is never reached for these.
-const env = (allowed = true) => ({ NVIDIA_API_KEY: 'k', LIMITER: { limit: async () => ({ success: allowed }) } });
+const env = (allowed = true) => ({ GEMINI_API_KEY: 'k', LIMITER: { limit: async () => ({ success: allowed }) } });
 const req = (path, init) => new Request(`https://w.dev${path}`, init);
 const post = (body) => ({ method: 'POST', body });
 assert.equal((await worker.fetch(req('/', post('{}')), env())).status, 404);

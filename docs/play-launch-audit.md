@@ -21,7 +21,7 @@ Status: **Fixed**, or **You** (needs an action only you can take).
 | B2 | Native libraries not **16 KB-aligned** (required since Nov 2025). | Fixed by B1. All 64-bit `.so` files are aligned to 64 KB; `zipalign -P 16` passes. |
 | B3 | **Crash:** starting a route whose start and destination share a building/concourse called `double.infinity.round()` on the first GPS fix, and the whole nav sheet turned into a grey error box. | Fixed: zero-hop routes start as "You've arrived"; the tracker never reports infinity. Verified on the emulator and covered by a test. |
 | B4 | **No privacy policy** anywhere (Play requires one in the listing and in the app). | Fixed: `docs/privacy.html`, linked from Settings → About and the Ask +15 consent. **You:** turn on GitHub Pages (below). |
-| B5 | **Ask +15 sent data to a third-party AI with no consent**, including saved places and the step-free preference, and opening it from Search/Navigate sent a question straight away. | Fixed: a one-time consent screen names NVIDIA and the model makers and lists everything sent. Nothing is sent until the user agrees. |
+| B5 | **Ask +15 sent data to a third-party AI with no consent**, including saved places and the step-free preference, and opening it from Search/Navigate sent a question straight away. | Fixed: a one-time consent screen explains that a third-party AI service answers and lists everything sent. Nothing is sent until the user agrees. |
 | B6 | **No way to report a bad AI answer** (Play AI-Generated Content policy). | Fixed: a Report button on every answer opens an email with the question and answer. |
 | B7 | **Ask +15 is broken in release builds**: `secrets.json` points at the emulator's localhost, the proxy was never deployed, but every Ask button still showed. | Fixed: every entry point hides when no https proxy is configured. **You:** deploy the proxy to ship AI (below). |
 
@@ -34,7 +34,7 @@ Status: **Fixed**, or **You** (needs an action only you can take).
 | H3 | Android back on any tab closed the app. | Fixed: other tabs go back to the map; the map closes a selected building or previewed route first. Verified. |
 | H4 | A corrupt Hive box left the app stuck on the splash screen; one unreadable saved route broke the Saved tab. | Fixed: bad boxes are reset; bad entries are skipped. |
 | H5 | Navigation: arrival fired on one stray fix and flipped back and forth; progress jumped forward; reroutes used vague indoor fixes, swapped in "preview only" routes, and "re-routing" could stay up forever. | Fixed: 2 close fixes to arrive and it sticks; progress only moves forward; reroute needs accuracy ≤ 25 m; failures say why. |
-| H6 | AI proxy usable as a free model endpoint with no global budget. | Fixed: daily cap across all users (`DAILY_CAP`, `0` = off switch), 40k character limit. **You:** create the KV namespace (below) and set a spend cap at NVIDIA. |
+| H6 | AI proxy usable as a free model endpoint with no global budget. | Fixed: daily cap across all users (`DAILY_CAP`, `0` = off switch), 40k character limit. **You:** create the KV namespace (below) and set a budget alert for the Gemini key. |
 | H7 | Looks official: City +15 sign as the icon, "official City map" wording, no disclaimer. | Fixed: "Not affiliated with or endorsed by The City of Calgary" in Settings → About. **You:** use the new icon from the `honiara` workspace, and put the same line in the store description. |
 | H8 | 100+ third-party brand logos (Starbucks, TD, KFC…) bundled without permission. | You kept them (decision). Fixed: a trademark notice in About. Remove a logo if its owner objects. |
 | H9 | Missing data credits: City of Calgary Open Government Licence wording, OpenStreetMap (ODbL), "Powered by Esri". | Fixed: in About and in the map caption. The caption wraps instead of cutting off at large text. |
@@ -44,7 +44,7 @@ Status: **Fixed**, or **You** (needs an action only you can take).
 
 | # | Finding | Status |
 |---|---|---|
-| M1 | Kimi's first token takes 30–70 s. The old 25 s limit meant it almost never answered; a 75 s limit (tried) felt broken on the emulator. | Fixed: 45 s, then the quick model; "Get a quick answer" appears after 6 s. Cut-off answers are now marked. |
+| M1 | Kimi's first token took 30–70 s, so Ask felt broken. | Fixed: Ask +15 now runs on Gemini (`gemini-3.5-flash-lite`, then `gemini-flash-lite-latest`, then `gemini-3.8-flash`): first token in about 1 s through the live proxy. The consent screen says "a third-party AI service"; the privacy policy names Google. |
 | M2 | Action tags only parsed in one field order, and malformed tags showed as raw `[ACTION:…]`. | Fixed: any order; leftover tags are removed. |
 | M3 | Switching dark/light mode in Settings left the map blank until you panned it (found on the emulator). | Fixed: tiles show without the fade animation. |
 | M4 | Snackbars with an action (Undo, Turn on) never went away on Flutter 3.47. | Fixed. |
@@ -88,7 +88,7 @@ Status: **Fixed**, or **You** (needs an action only you can take).
 - [x] Privacy policy live: https://harshalpathak97.github.io/plus15/privacy.html
 - [x] Upload keystore created: `~/development/keys/plus15-upload.jks` (password in `~/development/keys/plus15-key.properties`). **Back both up somewhere safe (a password manager)**; Play App Signing can reset a lost upload key, but it takes days.
 - [x] Signed release built: `~/Downloads/Plus15-release-1.0.0/` (`.aab` for Play, `.apk` for sideload testing, debug symbols zip for crash stacks).
-- [ ] **Rotate the NVIDIA key** if the deployed one is the key that leaked in the old APK: `npx wrangler secret put NVIDIA_API_KEY` (no rebuild needed). Set a usage cap at NVIDIA.
+- [ ] **Revoke the old NVIDIA key** at build.nvidia.com (it leaked in an earlier APK; the proxy no longer uses it). Set a usage cap / budget alert for the Gemini key in Google AI Studio or Cloud billing. If the Gemini key is on the free tier, Google may use prompts to improve its products; use a paid key to avoid that.
 - [ ] Check that developer@harshalpathak.com receives mail.
 - [ ] Play Console:
   - Create the app, enroll in Play App Signing, and upload the `.aab`.
@@ -106,8 +106,8 @@ Bump `version:` in `pubspec.yaml` (e.g. `1.0.1+2`) for every upload.
 
 - **Collects or shares user data:** yes.
 - **Location, approximate:** shared, only when the user uses Ask +15 (a phrase like "about 75 m from the Bankers Hall door"). Purpose: app functionality. Optional. Not collected by the developer otherwise; precise location never leaves the device.
-- **App activity → Other user-generated content** (Ask +15 questions, saved place names, step-free preference): shared with NVIDIA for app functionality. Optional.
-- **Collected vs shared:** the proxy forwards and keeps nothing, so declare it as **shared** (to NVIDIA), not collected.
+- **App activity → Other user-generated content** (Ask +15 questions, saved place names, step-free preference): shared with Google (Gemini API) for app functionality. Optional.
+- **Collected vs shared:** the proxy forwards and keeps nothing, so declare it as **shared** (to Google's Gemini API); it was also entered as collected but processed ephemerally.
 - **Encrypted in transit:** yes.
 - **Users can request deletion:** not applicable (nothing is stored on a server); say so.
 - **No** analytics, ads, account, contacts, photos, financial or health data.

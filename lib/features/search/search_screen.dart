@@ -13,7 +13,7 @@ import '../../shared/widgets/app_pill.dart';
 import '../../shared/widgets/brand_logo.dart';
 import '../../shared/widgets/section_header.dart';
 import '../ai/widgets/ai_concierge_sheet.dart';
-import '../ai/services/kimi_ai_service.dart' show aiConfigured;
+import '../ai/services/ai_service.dart' show aiConfigured;
 import '../shop_detail/shop_detail_sheet.dart';
 
 /// Search places and buildings on the +15.

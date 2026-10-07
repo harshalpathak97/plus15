@@ -15,10 +15,10 @@ class AiMessage {
   final DateTime timestamp;
   final bool isStreaming;
 
-  /// Kimi has been silent for a while: queued on NVIDIA's servers.
+  /// The primary model has been silent for a while (busy upstream).
   final bool queued;
 
-  /// The user stopped waiting for Kimi and asked the quick model.
+  /// The user stopped waiting and asked the next model.
   final bool quick;
 
   /// The model that wrote this reply; null for user messages and failures.
