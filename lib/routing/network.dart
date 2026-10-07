@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'geo.dart';
 
 /// The +15 routing network, loaded from assets/data/network.json (generated
@@ -155,6 +157,32 @@ class NetBuilding {
   /// Street-level door nodes (falls back to the single street node).
   List<String> get doors =>
       entranceNodeIds.isNotEmpty ? entranceNodeIds : [if (streetNodeId != null) streetNodeId!];
+
+  /// Where the name goes on the map, as [lat, lng]: the middle of the widest
+  /// stretch across the outline at its mid-latitude, so it lands inside
+  /// L-shaped blocks too. The +15 location when there is no outline.
+  List<double> get labelAt {
+    if (outline.length < 4) return [lat, lng];
+    final lats = outline.map((p) => p[0]);
+    final y = (lats.reduce(min) + lats.reduce(max)) / 2;
+    final xs = [
+      for (var i = 1; i < outline.length; i++)
+        if ((outline[i - 1][0] > y) != (outline[i][0] > y))
+          outline[i - 1][1] +
+              (y - outline[i - 1][0]) *
+                  (outline[i][1] - outline[i - 1][1]) /
+                  (outline[i][0] - outline[i - 1][0]),
+    ]..sort();
+    var best = [lat, lng];
+    var widest = 0.0;
+    for (var i = 0; i + 1 < xs.length; i += 2) {
+      if (xs[i + 1] - xs[i] > widest) {
+        widest = xs[i + 1] - xs[i];
+        best = [y, (xs[i] + xs[i + 1]) / 2];
+      }
+    }
+    return best;
+  }
 
   /// Official-map icons plus 'transit' for CTrain links, for UI filters.
   List<String> get amenities => [...landmarks, if (type == 'transit') 'transit'];

@@ -309,6 +309,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                         tileDisplay: const TileDisplay.instantaneous(),
                         fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       ),
+                      // Building blocks under the +15 (not over satellite photos).
+                      if (_currentZoom >= 15.5 && basemap != Basemap.satellite)
+                        buildingFootprints(network, isDark: darkSurface),
                       // Display layer: the City's +15 walkway footprints.
                       ...networkLayers(network,
                           closedBridges: closedBridges, zoom: _currentZoom, isDark: darkSurface),
@@ -330,7 +333,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       if (_currentZoom >= 13.5 && !debugGraph && activeRoute == null)
                         MarkerLayer(
                           markers: _buildMarkers(
-                              visibleBuildings, selectedBuilding, routeBuildings, isDark),
+                              visibleBuildings, selectedBuilding, routeBuildings, darkSurface),
                         ),
                       if (activeRoute == null && _currentZoom >= 17 && !debugGraph)
                         MarkerLayer(markers: doorMarkers(network, isDark: darkSurface)),
@@ -629,9 +632,31 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       final isSelected = b.id == selected?.id;
       final isOnRoute = routeBuildings.contains(b.id);
 
-      final shouldShowChip = isSelected || isOnRoute || declutteredChipIds.contains(b.id);
+      // Most buildings get a plain name on their block; the selected one and
+      // those on the route get the pill.
+      if (declutteredChipIds.contains(b.id) && !isSelected && !isOnRoute) {
+        final at = b.labelAt;
+        return Marker(
+          point: LatLng(at[0], at[1]),
+          width: 130,
+          height: 40,
+          child: Semantics(
+            button: true,
+            label: b.name,
+            excludeSemantics: true,
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                ref.read(selectedBuildingProvider.notifier).state = b;
+                _animatedMove(LatLng(b.lat, b.lng), _mapController.camera.zoom);
+              },
+              child: _BuildingLabel(name: b.name, isDark: isDark),
+            ),
+          ),
+        );
+      }
 
-      if (shouldShowChip) {
+      if (isSelected || isOnRoute) {
         return Marker(
           point: LatLng(b.lat, b.lng),
           width: isSelected ? 190 : 150,
@@ -716,7 +741,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       }
       if (chosen.length >= maxChips) break;
 
-      final point = LatLng(building.lat, building.lng);
+      final at = building.labelAt;
+      final point = LatLng(at[0], at[1]);
       final overlaps = occupied
           .any((existing) => _distance.as(LengthUnit.Meter, existing, point) < spacingMeters);
       if (overlaps) continue;
@@ -734,19 +760,20 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     if (b.amenities.contains('transit')) score += 3;
     if (b.amenities.contains('food')) score += 1;
     if (b.type == 'office') score -= 1;
+    if (b.secondary) score -= 3;
     return score;
   }
 
-  /// Chips are ~150 px wide: keep their anchors about that far apart on screen.
+  /// Names wrap to ~130 px: keep their anchors about that far apart on screen.
   double _chipSpacingMeters() {
     final metresPerPx = 156543.03 * cos(51.05 * pi / 180) / pow(2, _currentZoom);
-    return metresPerPx * 120;
+    return metresPerPx * 90;
   }
 
   int _maxChipCount() {
-    if (_currentZoom >= 17.0) return 30;
-    if (_currentZoom >= 16.5) return 22;
-    return 16;
+    if (_currentZoom >= 17.0) return 60;
+    if (_currentZoom >= 16.5) return 40;
+    return 24;
   }
 
   /// Nearest building name for the "You're near …" context line. Only resolves
@@ -1391,6 +1418,38 @@ class _BuildingDot extends StatelessWidget {
           shape: BoxShape.circle,
           border: Border.all(color: scheme.surface, width: 2),
         ),
+      ),
+    );
+  }
+}
+
+/// A building's name on its block, as on the City's +15 map: dark text with
+/// a halo so it reads over walkways and streets.
+class _BuildingLabel extends StatelessWidget {
+  final String name;
+  final bool isDark;
+
+  const _BuildingLabel({required this.name, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final base = Theme.of(context)
+        .textTheme
+        .labelMedium!
+        .copyWith(fontWeight: FontWeight.w600, height: 1.15);
+    Text text(TextStyle style) => Text(name,
+        maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: style);
+    return Center(
+      child: Stack(
+        children: [
+          text(base.copyWith(
+              foreground: Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 3
+                ..strokeJoin = StrokeJoin.round
+                ..color = isDark ? AppPalette.surfaceDark : Colors.white)),
+          text(base.copyWith(color: isDark ? AppPalette.inkDark : AppPalette.ink)),
+        ],
       ),
     );
   }
