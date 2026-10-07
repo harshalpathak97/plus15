@@ -10,6 +10,7 @@ import 'package:latlong2/latlong.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
+import '../../routing/geo.dart' show project;
 import '../../routing/network.dart';
 import '../../routing/router.dart';
 import '../../data/models/saved_route.dart';
@@ -40,6 +41,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     const LatLng(51.20, -113.85),
   );
   static const _defaultZoom = 15.5;
+  static const _mapTextScale = 1.15;
 
   double _currentZoom = _defaultZoom;
   bool _mapReady = false;
@@ -83,8 +85,12 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     _move?.dispose();
     _sheetExtent.dispose();
     _routeReveal.dispose();
+    _blockHits.dispose();
     super.dispose();
   }
+
+  /// Bottom of the floating header (status line and search bar) over the map.
+  double get _headerBottom => MediaQuery.paddingOf(context).top + 150;
 
   void _presentRoute(PlannedRoute route) {
     final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
@@ -93,7 +99,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       final size = MediaQuery.of(context).size;
       final fit = CameraFit.bounds(
         bounds: LatLngBounds.fromPoints([for (final p in g) LatLng(p[0], p[1])]),
-        padding: EdgeInsets.fromLTRB(48, 170, 72, size.height * AppDims.sheetMid + 24),
+        padding: EdgeInsets.fromLTRB(48, _headerBottom + 36, 72, size.height * AppDims.sheetMid + 24),
         maxZoom: 17.5,
       ).fit(_mapController.camera);
       _animatedMove(fit.center, fit.zoom);
@@ -213,6 +219,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         ),
         data: (network) {
           final buildings = network.buildings;
+          final blocks = _blocksIn(network);
           final buildingMap = network.buildingById;
           final visibleBuildings = _visibleBuildings(buildings);
           final now = calgaryNow();
@@ -260,7 +267,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                 // Map labels live in fixed-size markers; cap their growth so
                 // large system text doesn't clip them (the rest of the UI scales).
                 MediaQuery.withClampedTextScaling(
-                  maxScaleFactor: 1.15,
+                  maxScaleFactor: _mapTextScale,
                   child: FlutterMap(
                     mapController: _mapController,
                     options: MapOptions(
@@ -309,6 +316,17 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                         tileDisplay: const TileDisplay.instantaneous(),
                         fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       ),
+                      // Building blocks under the +15. Over satellite photos they
+                      // are invisible but still tappable.
+                      if (_currentZoom >= _blockZoom)
+                        buildingFootprints(
+                          blocks,
+                          hidden: basemap == Basemap.satellite,
+                          selectedId: _blockOf[selectedBuilding?.id]?.id,
+                          isDark: darkSurface,
+                          hits: _blockHits,
+                          onTap: (b) => _select(b),
+                        ),
                       // Display layer: the City's +15 walkway footprints.
                       ...networkLayers(network,
                           closedBridges: closedBridges, zoom: _currentZoom, isDark: darkSurface),
@@ -330,7 +348,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       if (_currentZoom >= 13.5 && !debugGraph && activeRoute == null)
                         MarkerLayer(
                           markers: _buildMarkers(
-                              visibleBuildings, selectedBuilding, routeBuildings, isDark),
+                              visibleBuildings, selectedBuilding, routeBuildings, darkSurface),
                         ),
                       if (activeRoute == null && _currentZoom >= 17 && !debugGraph)
                         MarkerLayer(markers: doorMarkers(network, isDark: darkSurface)),
@@ -346,6 +364,28 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           markers: [_buildUserLocationMarker(displayUserLocation)],
                         ),
                     ],
+                  ),
+                ),
+                // Keeps map names from running under the status bar clock.
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: MediaQuery.paddingOf(context).top + 12,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
+                            Theme.of(context).colorScheme.surface.withValues(alpha: 0),
+                          ],
+                          stops: const [0.6, 1],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 Positioned(
@@ -374,7 +414,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       alignment: Alignment.bottomLeft,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: (darkSurface ? Colors.black : Colors.white).withValues(alpha: 0.6),
+                          color: (darkSurface ? Colors.black : Colors.white).withValues(alpha: 0.85),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Padding(
@@ -614,118 +654,182 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     ];
   }
 
-  List<Marker> _buildMarkers(
-      List<NetBuilding> buildings, NetBuilding? selected, Set<String> routeBuildings, bool isDark) {
-    final showChips = _currentZoom >= 16.1;
-    final declutteredChipIds =
-        showChips ? _declutteredChipIds(buildings, selected, routeBuildings) : const <String>{};
+  /// From this zoom buildings are grey blocks with their names on them, as on
+  /// the City's +15 map; further out they are dots.
+  static const _blockZoom = 15.5;
 
-    final onRouteBuildings = buildings.where((b) => routeBuildings.contains(b.id)).toList();
-    final nonRouteBuildings = buildings.where((b) => !routeBuildings.contains(b.id)).toList();
+  /// One building per outline (the most useful when several share one), each
+  /// building's block, and where each block's name goes. Built once.
+  Plus15Network? _blocksFor;
+  List<NetBuilding> _blocks = const [];
+  Map<String, NetBuilding> _blockOf = const {};
+  Map<String, ({double lat, double lng, double widthM})> _labelAt = const {};
+  final LayerHitNotifier<NetBuilding> _blockHits = ValueNotifier(null);
 
-    final allVisible = [...nonRouteBuildings, ...onRouteBuildings];
+  List<NetBuilding> _blocksIn(Plus15Network net) {
+    if (identical(_blocksFor, net)) return _blocks;
+    final byOutline = <String, NetBuilding>{};
+    for (final b in net.buildings.where((b) => b.outline.isNotEmpty)) {
+      final key = '${b.outline}';
+      final had = byOutline[key];
+      if (had == null || _chipPriority(b) > _chipPriority(had)) byOutline[key] = b;
+    }
+    _blocksFor = net;
+    _blocks = byOutline.values.toList();
+    _blockOf = {
+      for (final b in net.buildings)
+        if (b.outline.isNotEmpty) b.id: byOutline['${b.outline}']!,
+    };
+    _labelAt = {for (final b in _blocks) b.id: b.label};
+    return _blocks;
+  }
 
-    return allVisible.map((b) {
-      final isSelected = b.id == selected?.id;
-      final isOnRoute = routeBuildings.contains(b.id);
+  /// Picks [b] and centres it in the part of the map left visible between
+  /// the header and the half-height sheet that opens for it.
+  void _select(NetBuilding b, {double? zoom}) {
+    HapticFeedback.lightImpact();
+    ref.read(selectedBuildingProvider.notifier).state = b;
+    final cam = _mapController.camera;
+    final z = zoom ?? cam.zoom;
+    final top = _headerBottom;
+    final bottom = cam.size.height * (1 - AppDims.sheetMid);
+    final dy = cam.size.height / 2 - (top + bottom) / 2;
+    _animatedMove(
+        cam.unprojectAtZoom(cam.projectAtZoom(LatLng(b.lat, b.lng), z) + Offset(0, dy), z), z);
+  }
 
-      final shouldShowChip = isSelected || isOnRoute || declutteredChipIds.contains(b.id);
+  List<Marker> _buildMarkers(List<NetBuilding> buildings, NetBuilding? selected,
+      Set<String> routeBuildings, bool isDark) {
+    final blocksShown = _currentZoom >= _blockZoom;
+    return [
+      if (blocksShown) ..._blockNames(selected, isDark),
+      // Buildings with no outline (and everything when zoomed out) are dots.
+      for (final b in buildings)
+        if (!blocksShown || b.outline.isEmpty) _dotOrChip(b, selected, routeBuildings),
+    ];
+  }
 
-      if (shouldShowChip) {
-        return Marker(
-          point: LatLng(b.lat, b.lng),
-          width: isSelected ? 190 : 150,
-          height: 36,
-          child: Semantics(
-            button: true,
-            label: b.name,
-            excludeSemantics: true,
-            child: GestureDetector(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                ref.read(selectedBuildingProvider.notifier).state = b;
-                _animatedMove(LatLng(b.lat, b.lng), _mapController.camera.zoom);
-              },
-              child: _BuildingChip(
-                name: b.name,
-                isSelected: isSelected,
-                isOnRoute: isOnRoute,
-                type: b.type,
-                hasFood: b.amenities.contains('food'),
-              ),
-            ),
+  /// Names on blocks, only where they fit: a name may run a little past its
+  /// block (as on the City's map) but never covers its neighbours, so zoomed
+  /// out only the big buildings are named and the rest appear as you zoom in.
+  List<Marker> _blockNames(NetBuilding? selected, bool isDark) {
+    final metresPerPx = 156543.03 * cos(51.05 * pi / 180) / pow(2, _currentZoom);
+    final picked = selected == null ? null : _blockOf[selected.id];
+    final order = [
+      if (picked != null) picked,
+      ...(_blocks.where((b) => b != picked).toList()
+        ..sort((a, b) {
+          final score = _chipPriority(b).compareTo(_chipPriority(a));
+          return score != 0 ? score : _labelAt[b.id]!.widthM.compareTo(_labelAt[a.id]!.widthM);
+        })),
+    ];
+    final taken = <Rect>[];
+    final out = <Marker>[];
+    for (final block in order) {
+      final isPicked = block == picked;
+      final b = isPicked ? selected! : block;
+      final at = _labelAt[block.id]!;
+      final room = isPicked ? 160.0 : min(at.widthM / metresPerPx * 1.2, 150.0);
+      final size = _nameSize(b.name, room);
+      if (size == null) continue;
+      final c = project(at.lat, at.lng);
+      final box = Rect.fromCenter(
+          center: Offset(c.x / metresPerPx, -c.y / metresPerPx),
+          width: size.width + 8,
+          height: size.height + 4);
+      if (!isPicked && taken.any(box.overlaps)) continue;
+      taken.add(box);
+      out.add(Marker(
+        point: LatLng(at.lat, at.lng),
+        width: size.width + 8,
+        height: size.height + 6,
+        child: Semantics(
+          button: true,
+          selected: isPicked,
+          label: b.name,
+          excludeSemantics: true,
+          child: GestureDetector(
+            onTap: () => _select(b),
+            child: _BuildingLabel(name: b.name, isDark: isDark, selected: isPicked),
           ),
-        );
-      }
+        ),
+      ));
+    }
+    return out;
+  }
 
-      // A 12 px dot with a 44 px touch area.
+  /// One-line width of each name and of its longest word, and the line
+  /// height, at the map's text size. Measured once per name.
+  final _nameWidths = <String, (double, double)>{};
+  double _lineHeight = 0;
+  double? _measuredScale;
+
+  /// The label's size in [room] px, or null when it would need a third line
+  /// or break a word.
+  Size? _nameSize(String name, double room) {
+    if (room < 36) return null;
+    final style = _BuildingLabel.styleOf(context);
+    final scaler = MediaQuery.textScalerOf(context).clamp(maxScaleFactor: _mapTextScale);
+    if (_measuredScale != scaler.scale(12)) {
+      _nameWidths.clear();
+      _measuredScale = scaler.scale(12);
+    }
+    TextPainter line(String t) => TextPainter(
+        text: TextSpan(text: t, style: style), textDirection: TextDirection.ltr, textScaler: scaler)
+      ..layout();
+    final (full, word) = _nameWidths.putIfAbsent(name, () {
+      final p = line(name);
+      _lineHeight = p.height;
+      return (p.width, name.split(' ').map((w) => line(w).width).reduce(max));
+    });
+    if (full <= room) return Size(full, _lineHeight);
+    // Short names ("400 4th") stay on one line rather than split into scraps.
+    if (name.length <= 10 && full <= room * 1.3) return Size(full, _lineHeight);
+    // Two lines rarely split evenly; leave some slack.
+    if (word <= room && full <= room * 1.75) return Size(room, _lineHeight * 2);
+    return null;
+  }
+
+  Marker _dotOrChip(NetBuilding b, NetBuilding? selected, Set<String> routeBuildings) {
+    final isSelected = b.id == selected?.id;
+    final isOnRoute = routeBuildings.contains(b.id);
+    if (isSelected || isOnRoute) {
       return Marker(
         point: LatLng(b.lat, b.lng),
-        width: 44,
-        height: 44,
+        width: isSelected ? 190 : 150,
+        height: 36,
         child: Semantics(
           button: true,
           label: b.name,
+          excludeSemantics: true,
           child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              HapticFeedback.lightImpact();
-              ref.read(selectedBuildingProvider.notifier).state = b;
-              _animatedMove(LatLng(b.lat, b.lng), 16.0);
-            },
-            child: _BuildingDot(type: b.type, hasFood: b.amenities.contains('food')),
+            onTap: () => _select(b),
+            child: _BuildingChip(
+              name: b.name,
+              isSelected: isSelected,
+              isOnRoute: isOnRoute,
+              type: b.type,
+              hasFood: b.amenities.contains('food'),
+            ),
           ),
         ),
       );
-    }).toList();
-  }
-
-  Set<String> _declutteredChipIds(
-      List<NetBuilding> buildings, NetBuilding? selected, Set<String> routeBuildings) {
-    if (buildings.isEmpty) return const <String>{};
-
-    final spacingMeters = _chipSpacingMeters();
-    final maxChips = _maxChipCount();
-    final selectedId = selected?.id;
-    final buildingMap = {for (final b in buildings) b.id: b};
-
-    final occupied = <LatLng>[];
-    if (selectedId != null) {
-      final selectedBuilding = buildingMap[selectedId];
-      if (selectedBuilding != null) {
-        occupied.add(LatLng(selectedBuilding.lat, selectedBuilding.lng));
-      }
     }
-    for (final id in routeBuildings) {
-      final routeBuilding = buildingMap[id];
-      if (routeBuilding != null) {
-        occupied.add(LatLng(routeBuilding.lat, routeBuilding.lng));
-      }
-    }
-
-    final candidates = [...buildings]..sort((a, b) {
-        final score = _chipPriority(b).compareTo(_chipPriority(a));
-        if (score != 0) return score;
-        return a.name.compareTo(b.name);
-      });
-
-    final chosen = <String>{};
-    for (final building in candidates) {
-      if (building.id == selectedId || routeBuildings.contains(building.id)) {
-        continue;
-      }
-      if (chosen.length >= maxChips) break;
-
-      final point = LatLng(building.lat, building.lng);
-      final overlaps = occupied
-          .any((existing) => _distance.as(LengthUnit.Meter, existing, point) < spacingMeters);
-      if (overlaps) continue;
-
-      chosen.add(building.id);
-      occupied.add(point);
-    }
-
-    return chosen;
+    // A 12 px dot with a 44 px touch area.
+    return Marker(
+      point: LatLng(b.lat, b.lng),
+      width: 44,
+      height: 44,
+      child: Semantics(
+        button: true,
+        label: b.name,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _select(b, zoom: max(16.0, _mapController.camera.zoom)),
+          child: _BuildingDot(type: b.type, hasFood: b.amenities.contains('food')),
+        ),
+      ),
+    );
   }
 
   int _chipPriority(NetBuilding b) {
@@ -734,19 +838,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     if (b.amenities.contains('transit')) score += 3;
     if (b.amenities.contains('food')) score += 1;
     if (b.type == 'office') score -= 1;
+    if (b.secondary) score -= 3;
     return score;
-  }
-
-  /// Chips are ~150 px wide: keep their anchors about that far apart on screen.
-  double _chipSpacingMeters() {
-    final metresPerPx = 156543.03 * cos(51.05 * pi / 180) / pow(2, _currentZoom);
-    return metresPerPx * 120;
-  }
-
-  int _maxChipCount() {
-    if (_currentZoom >= 17.0) return 30;
-    if (_currentZoom >= 16.5) return 22;
-    return 16;
   }
 
   /// Nearest building name for the "You're near …" context line. Only resolves
@@ -1391,6 +1484,45 @@ class _BuildingDot extends StatelessWidget {
           shape: BoxShape.circle,
           border: Border.all(color: scheme.surface, width: 2),
         ),
+      ),
+    );
+  }
+}
+
+/// A building's name on its block, as on the City's +15 map: dark text with
+/// a halo so it reads over walkways and streets.
+class _BuildingLabel extends StatelessWidget {
+  final String name;
+  final bool isDark;
+  final bool selected;
+
+  const _BuildingLabel({required this.name, required this.isDark, this.selected = false});
+
+  static TextStyle styleOf(BuildContext context) => Theme.of(context)
+      .textTheme
+      .labelMedium!
+      .copyWith(fontWeight: FontWeight.w600, height: 1.15);
+
+  @override
+  Widget build(BuildContext context) {
+    final base = styleOf(context);
+    Text text(TextStyle style) => Text(name,
+        maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: style);
+    return Center(
+      child: Stack(
+        children: [
+          text(base.copyWith(
+              foreground: Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 3
+                ..strokeJoin = StrokeJoin.round
+                ..color = isDark ? AppPalette.surfaceDark : Colors.white)),
+          text(base.copyWith(
+              color: selected
+                  ? (isDark ? AppPalette.brandSoft : AppPalette.brandDeep)
+                  : (isDark ? AppPalette.inkDark : AppPalette.ink),
+              fontWeight: selected ? FontWeight.w800 : null)),
+        ],
       ),
     );
   }

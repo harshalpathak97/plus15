@@ -93,11 +93,13 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
     // register correctly — never inside the sheet's deferred builder closure.
     final children = _content(context);
 
-    return DraggableScrollableSheet(
+    return LayoutBuilder(builder: (context, box) => DraggableScrollableSheet(
       controller: _controller,
       initialChildSize: AppDims.sheetIdle,
       minChildSize: AppDims.sheetMin,
-      maxChildSize: AppDims.sheetMax,
+      // Opens fully only up to just under the map's floating search bar.
+      maxChildSize: (1 - (MediaQuery.paddingOf(context).top + 158) / box.maxHeight)
+          .clamp(AppDims.sheetMid, AppDims.sheetMax),
       snap: true,
       snapSizes: const [AppDims.sheetIdle, AppDims.sheetMid],
       builder: (context, scrollController) {
@@ -108,7 +110,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
           children: children,
         );
       },
-    );
+    ));
   }
 
   List<Widget> _content(BuildContext context) {

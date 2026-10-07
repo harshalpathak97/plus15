@@ -171,4 +171,20 @@ void main() {
     final stairs = {for (final e in net.edges) if (e.stairsRequired) e.bridgeNumber};
     expect(stairs, {'1527', '1522'});
   });
+
+  test('every building name sits inside its outline on the map', () {
+    for (final b in net.buildings.where((b) => b.outline.isNotEmpty)) {
+      final (lat: y, lng: x, widthM: w) = b.label;
+      expect(w, greaterThan(5), reason: b.name);
+      var inside = false;
+      final o = b.outline;
+      for (var i = 1; i < o.length; i++) {
+        if ((o[i - 1][0] > y) != (o[i][0] > y) &&
+            x < o[i - 1][1] + (y - o[i - 1][0]) * (o[i][1] - o[i - 1][1]) / (o[i][0] - o[i - 1][0])) {
+          inside = !inside;
+        }
+      }
+      expect(inside, isTrue, reason: b.name);
+    }
+  });
 }
