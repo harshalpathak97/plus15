@@ -21,7 +21,7 @@ Feature graphic: “Never get lost in the +15” and “Calgary’s indoor skywa
 
 ## Claims deliberately avoided
 - “Without stepping outside”: Mostly indoors routes can still include short outdoor walks.
-- “Open now” for all places: only 25 of 144 places have opening hours. (`listing.txt` still says “141 shops … with … open-now status”, which overstates this.)
+- “Open now” for all places: only 25 of 144 places have opening hours.
 - Any mention of an AI provider.
 
 ## Captures
