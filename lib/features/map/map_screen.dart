@@ -1044,7 +1044,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       BuildContext context, NavigationSession session, Map<String, NetBuilding> bMap, bool isDark) {
     final theme = Theme.of(context);
     final dest = session.destinationId == null ? null : bMap[session.destinationId!];
-    final destName = dest?.name ?? 'your destination';
+    final shop = ref.watch(routeToShopProvider);
+    final destName = shop != null && shop.buildingId == session.destinationId
+        ? '${shop.name}, in ${dest?.name}'
+        : dest?.name ?? 'your destination';
     return Positioned(
       left: 16,
       right: 16,
@@ -1087,7 +1090,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       Text(destName,
                           style: theme.textTheme.bodyMedium
                               ?.copyWith(color: theme.textTheme.bodySmall?.color),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis),
                     ],
                   ),

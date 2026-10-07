@@ -618,13 +618,14 @@ class _NetworkPainter extends CustomPainter {
   }
 
   void _paintNetwork(Canvas canvas, CameraFrame frame) {
-    // Theme-resolved flat fills. Bridges get the skywalk teal identity.
-    final topEnclosed = isDark ? const Color(0xFF23262B) : Colors.white;
-    final sideEnclosed = isDark ? const Color(0xFF15171A) : const Color(0xFFC9C8C2);
-    final topBridge = isDark ? const Color(0xFF2E3740) : const Color(0xFFDCE3E8);
-    final sideBridge = isDark ? const Color(0xFF1C2228) : const Color(0xFFA9B5BE);
-    final bridgeEdge =
-        (isDark ? AppPalette.skywalkBright : AppPalette.skywalk).withValues(alpha: 0.55);
+    // Theme-resolved flat fills in the 2D map's steel, so the network stands
+    // out from the pale ground; bridges a shade darker than walkways.
+    final topEnclosed = isDark ? const Color(0xFF3A4048) : const Color(0xFFB4BCC4);
+    final sideEnclosed = isDark ? const Color(0xFF262A30) : const Color(0xFF8D97A1);
+    final topBridge = isDark ? const Color(0xFF55616C) : const Color(0xFF7F8D99);
+    final sideBridge = isDark ? const Color(0xFF3A434C) : const Color(0xFF5E6B76);
+    final edge =
+        (isDark ? AppPalette.skywalkBright : AppPalette.skywalk).withValues(alpha: 0.8);
     final shadow = Colors.black.withValues(alpha: isDark ? 0.3 : 0.06);
 
     final faces = <_Face>[];
@@ -713,7 +714,7 @@ class _NetworkPainter extends CustomPainter {
           depthSum / count - 0.8, // small bias so roofs draw over own walls
           roof,
           topColor,
-          prism.isBridge ? bridgeEdge : null,
+          edge,
         ));
       }
     }
