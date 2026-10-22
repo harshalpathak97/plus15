@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:plus15_navigator/routing/conditions.dart';
 import 'package:plus15_navigator/routing/network.dart';
 import 'package:plus15_navigator/routing/router.dart';
+import 'package:plus15_navigator/routing/streets.dart';
 
 /// The real generated network and closures, loaded from disk.
 final Plus15Network network = Plus15Network.fromJson(
@@ -15,7 +16,12 @@ final List<Closure> closures = ((jsonDecode(File('assets/data/closures.json').re
     .toList();
 
 final Conditions conditions = Conditions(network, closures);
-final Plus15Router router = Plus15Router(network, conditions);
+
+/// The sidewalk graph for outdoor legs, generated alongside the network.
+final StreetGraph streets = StreetGraph.fromJson(
+    jsonDecode(File('assets/data/streets.json').readAsStringSync()) as Map<String, dynamic>);
+
+final Plus15Router router = Plus15Router(network, conditions, streets: streets);
 
 /// A weekday noon after every published closure has ended.
 final DateTime clearDay = DateTime(2027, 6, 15, 12);

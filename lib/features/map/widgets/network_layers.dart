@@ -178,9 +178,10 @@ List<Marker> routeDoorMarkers(PlannedRoute route, Plus15Network net) {
         alignment: Alignment.topCenter,
         child: _DoorChip(label: label, mapped: mapped),
       );
+  final doorPoint = route.doorPoint;
   for (final h in route.hops) {
-    if (h.edge.kind == 'virtual' && !h.edge.indoor && h.geometry.length >= 3) {
-      out.add(door(h.geometry[1], 'Enter here', h.edge.via != null &&
+    if (h.edge.kind == 'virtual' && !h.edge.indoor && doorPoint != null) {
+      out.add(door(doorPoint, 'Enter here', h.edge.via != null &&
           h.edge.via != net.buildingById[h.edge.buildingIds.firstOrNull]?.name));
     } else if (h.edge.kind == 'street_exit') {
       final leaving = net.nodeById[h.toNode]?.level == 'street';

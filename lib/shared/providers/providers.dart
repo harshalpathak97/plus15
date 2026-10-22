@@ -12,6 +12,7 @@ import '../../features/map/basemap.dart';
 import '../../routing/conditions.dart';
 import '../../routing/network.dart';
 import '../../routing/router.dart';
+import '../../routing/streets.dart';
 
 final mapDataSourceProvider = Provider((_) => MapDataSource());
 final localStorageProvider = Provider((_) => LocalStorage());
@@ -32,9 +33,14 @@ final conditionsProvider = FutureProvider<Conditions>((ref) async {
   return Conditions(net, feed.closures);
 });
 
+final streetsProvider = FutureProvider<StreetGraph>((ref) {
+  return ref.read(mapDataSourceProvider).loadStreets();
+});
+
 final routerProvider = FutureProvider<Plus15Router>((ref) async {
   final net = await ref.watch(networkProvider.future);
-  return Plus15Router(net, await ref.watch(conditionsProvider.future));
+  return Plus15Router(net, await ref.watch(conditionsProvider.future),
+      streets: await ref.watch(streetsProvider.future));
 });
 
 final buildingsProvider = FutureProvider<List<NetBuilding>>((ref) async {
@@ -230,10 +236,28 @@ final navigationSessionProvider =
 /// A GPS fix with its horizontal accuracy (metres, 68% confidence).
 class LocationFix extends LatLng {
   final double accuracyM;
+  final DateTime at;
   LocationFix(Position p)
       : accuracyM = p.accuracy,
+        at = p.timestamp,
         super(p.latitude, p.longitude);
 }
+
+/// One fresh fix for planning (never the last known position, which can be
+/// hours old). Null when it can't be had in [timeout].
+Future<LocationFix?> freshFix({Duration timeout = const Duration(seconds: 12)}) async {
+  if (!await _hasLocationPermission()) return null;
+  try {
+    final p = await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(accuracy: LocationAccuracy.high, timeLimit: timeout));
+    return LocationFix(p);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// The last "nearest +15 entrance" search, for the other ranked doors.
+final entranceOptionsProvider = StateProvider<EntranceResult?>((ref) => null);
 
 /// Whether we may read location. Never shows the OS prompt: that only
 /// happens from an explicit tap, via [requestLocationAccess].

@@ -43,13 +43,17 @@ List<String> validateRoute(Plus15Network net, Conditions cond, PlannedRoute r) {
       final gap = haversineM(a[0], a[1], b[0], b[1]);
       if (gap > 0.5) problems.add('geometry jumps ${gap.toStringAsFixed(1)} m between hops ${i - 1} and $i');
     }
-    for (var k = 1; k < h.geometry.length; k++) {
+    // A GPS approach off the mapped street grid is a straight line by design.
+    final straightLineEstimate = e.kind == 'virtual' && !e.sources.contains('osm_streets');
+    for (var k = 1; k < h.geometry.length && !straightLineEstimate; k++) {
       final a = h.geometry[k - 1], b = h.geometry[k];
       final seg = haversineM(a[0], a[1], b[0], b[1]);
       if (seg > 320) problems.add('hop $i has a ${seg.round()} m straight segment');
     }
     final n = net.nodeById[h.toNode];
-    if (n != null) {
+    // An estimated street "door" is the building's outline point nearest the
+    // walker, so an entrance route ends there rather than at the node.
+    if (n != null && !(e.kind == 'virtual' && n.level == 'street' && !n.isMappedDoor)) {
       final end = h.geometry.last;
       if (haversineM(end[0], end[1], n.lat, n.lng) > 0.5) {
         problems.add('hop $i geometry does not end at node ${n.id}');

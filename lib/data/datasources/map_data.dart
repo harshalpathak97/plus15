@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import '../../routing/conditions.dart';
 import '../../routing/network.dart';
+import '../../routing/streets.dart';
 import '../models/shop.dart';
 
 /// Published closures plus when they were transcribed from calgary.ca.
@@ -14,6 +15,7 @@ class ClosureFeed {
 
 class MapDataSource {
   Plus15Network? _network;
+  StreetGraph? _streets;
   ClosureFeed? _closures;
   List<Shop>? _shops;
 
@@ -25,6 +27,14 @@ class MapDataSource {
     final bytes = await rootBundle.load('assets/data/network.json');
     final raw = utf8.decode(bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes));
     return _network = Plus15Network.fromJson(json.decode(raw) as Map<String, dynamic>);
+  }
+
+  /// The sidewalk graph for outdoor legs (tool/build_network.dart).
+  Future<StreetGraph> loadStreets() async {
+    if (_streets != null) return _streets!;
+    final bytes = await rootBundle.load('assets/data/streets.json');
+    final raw = utf8.decode(bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes));
+    return _streets = StreetGraph.fromJson(json.decode(raw) as Map<String, dynamic>);
   }
 
   Future<ClosureFeed> loadClosures() async {

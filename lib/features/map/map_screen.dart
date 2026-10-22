@@ -45,6 +45,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   double _currentZoom = _defaultZoom;
   bool _mapReady = false;
+  bool _findingEntrance = false;
   int _offRouteStrikes = 0;
   int _arrivalHits = 0;
   DateTime? _lastRerouteAt;
@@ -298,6 +299,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       onTap: (_, __) {
                         ref.read(selectedBuildingProvider.notifier).state = null;
                       },
+                      // Manual start: find the nearest +15 entrance from here.
+                      onLongPress: (_, point) => _findEntrance(from: point),
                       interactionOptions: const InteractionOptions(
                         flags: InteractiveFlag.all,
                       ),
@@ -441,6 +444,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                   child: MapBottomSheet(
                     onStopNavigation: _stopNavigation,
                     onStartQuickRoute: _startQuickRoute,
+                    onFindEntrance: _findEntrance,
                   ),
                 ),
                 if (arrived) _buildArrivalCard(context, session, buildingMap, isDark),
@@ -516,8 +520,12 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     final progress = _tracker!.progressAt(user);
 
     // Indoor GPS downtown is often 20–40 m off; only treat clearly distant
-    // fixes as off-route.
-    if (progress.offRouteM <= 35) {
+    // fixes as off-route. Outdoors on the street leg, allow for walking the
+    // other side of the road.
+    final onStreetLeg = progress.stepIndex == 0 &&
+        route.hops.first.edge.kind == 'virtual' &&
+        !route.hops.first.edge.indoor;
+    if (progress.offRouteM <= (onStreetLeg ? 50 : 35)) {
       _offRouteStrikes = 0;
       // Two fixes in a row near the end, so one stray fix can't "arrive".
       _arrivalHits = progress.remainingM <= 20 ? _arrivalHits + 1 : 0;
@@ -553,14 +561,22 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
     // Re-route from the GPS fix: the router starts inside the +15 polygon you
     // are in, or from the nearest building if you are outside the network.
+    // An entrance route re-plans the walk to the same door.
     final router = await ref.read(routerProvider.future);
-    final result = router.route(
-      RouteOrigin.location(user.latitude, user.longitude),
-      session.destinationId!,
-      profile: session.profile,
-      at: calgaryNow(),
-    );
-    final reroute = result.route;
+    final origin = RouteOrigin.location(user.latitude, user.longitude);
+    final PlannedRoute? reroute;
+    final String? unavailable;
+    if (route.isEntranceRoute) {
+      final e = router.nearestEntrances(origin,
+          profile: session.profile, at: calgaryNow(), limit: 1, doorNodeId: route.hops.single.toNode);
+      reroute = e.routes.firstOrNull;
+      unavailable = e.unavailableReason;
+    } else {
+      final result = router.route(origin, session.destinationId!,
+          profile: session.profile, at: calgaryNow());
+      reroute = result.route;
+      unavailable = result.unavailableReason;
+    }
     if (reroute == null || reroute.previewOnly) {
       // Keep the current route; say why instead of "re-routing" forever.
       ref
@@ -570,7 +586,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(reroute == null
-                ? (result.unavailableReason ?? "Can't find a new route from here.")
+                ? (unavailable ?? "Can't find a new route from here.")
                 : "Can't re-route right now. Head back to the line on the map.")));
       }
       return;
@@ -1029,9 +1045,56 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     );
   }
 
+  /// The nearest street doors into the +15 from the phone's location (or a
+  /// long-pressed point), ranked by walking distance; shows the nearest as
+  /// the active route with the others as options.
+  Future<void> _findEntrance({LatLng? from}) async {
+    if (_findingEntrance) return;
+    _findingEntrance = true;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      LatLng? origin = from;
+      if (origin == null) {
+        if (!await ensureLocation(context, ref) || !mounted) return;
+        messenger.showSnackBar(const SnackBar(
+            content: Text('Finding your location…'), duration: Duration(seconds: 2)));
+        final fix = await freshFix();
+        if (!mounted) return;
+        messenger.hideCurrentSnackBar();
+        if (fix == null || fix.accuracyM > 75) {
+          messenger.showSnackBar(const SnackBar(
+              content: Text("Couldn't get a good fix. Long-press the map where you are.")));
+          return;
+        }
+        origin = fix;
+      }
+      final router = await ref.read(routerProvider.future);
+      if (!mounted) return;
+      final result = router.nearestEntrances(
+        RouteOrigin.location(origin.latitude, origin.longitude),
+        profile: defaultProfile(ref.read(accessibilityModeProvider)),
+        at: calgaryNow(),
+      );
+      if (!result.ok) {
+        messenger.showSnackBar(SnackBar(
+            content: Text(result.unavailableReason ?? 'No +15 entrance found nearby.')));
+        return;
+      }
+      HapticFeedback.selectionClick();
+      ref.read(navigationSessionProvider.notifier).stop();
+      ref.read(selectedBuildingProvider.notifier).state = null;
+      ref.read(entranceOptionsProvider.notifier).state =
+          from == null ? result : result.withManualStart();
+      ref.read(activeRouteProvider.notifier).state = result.routes.first;
+    } finally {
+      _findingEntrance = false;
+    }
+  }
+
   /// Tears down an active route + navigation session.
   void _stopNavigation() {
     ref.read(activeRouteProvider.notifier).state = null;
+    ref.read(entranceOptionsProvider.notifier).state = null;
     ref.read(navigationSessionProvider.notifier).stop();
     _tracker = null;
     _offRouteStrikes = 0;

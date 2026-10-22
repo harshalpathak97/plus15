@@ -5,6 +5,7 @@
 //   dart run tool/build_network.dart            # build from snapshots
 //   dart run tool/build_network.dart --refresh  # re-download City and OSM data first
 //   dart run tool/build_network.dart --refresh-osm  # re-download OSM street doors only
+//   dart run tool/build_network.dart --refresh-streets  # re-download OSM sidewalks only
 //   dart run tool/build_network.dart --dump     # print zones for curation
 import 'dart:convert';
 import 'dart:io';
@@ -25,6 +26,13 @@ const osmQuery = '[out:json][timeout:120];'
     'way["building"](51.0405,-114.0905,51.0565,-114.0500);'
     'relation["building"](51.0405,-114.0905,51.0565,-114.0500););out body;>;out skel qt;';
 const osmSource = 'OpenStreetMap building entrances (© OpenStreetMap contributors, ODbL)';
+/// Everything a pedestrian may walk on downtown: sidewalks, paths, crossings,
+/// stairs and streets without a sidewalk tag. Private and foot=no ways are out.
+const streetsQuery = '[out:json][timeout:120];'
+    'way["highway"~"^(footway|path|pedestrian|steps|living_street|residential|tertiary|'
+    'secondary|primary|service|unclassified|cycleway)\$"]["foot"!="no"]["access"!="private"]'
+    '(51.0330,-114.0950,51.0600,-114.0400);out body;>;out skel qt;';
+const streetsSource = 'OpenStreetMap pedestrian ways (© OpenStreetMap contributors, ODbL)';
 
 final _errors = <String>[];
 final _warnings = <String>[];
@@ -57,6 +65,106 @@ class Portal {
   late String nodeId;
   Portal(this.a, this.b, this.at, this.widthM);
   Region other(Region r) => r == a ? b : a;
+}
+
+Future<List<Map>> _overpass(String query) async {
+  stdout.writeln('POST $osmUrl');
+  final client = HttpClient()..userAgent = 'plus15-navigator-build/1.0';
+  final req = await client.postUrl(Uri.parse(osmUrl));
+  req.headers
+    ..contentType = ContentType('application', 'x-www-form-urlencoded')
+    ..set('Accept', 'application/json');
+  req.write('data=${Uri.encodeQueryComponent(query)}');
+  final res = await req.close();
+  if (res.statusCode != 200) throw 'HTTP ${res.statusCode} for $osmUrl';
+  final els = ((jsonDecode(await res.transform(utf8.decoder).join()) as Map)['elements'] as List)
+      .cast<Map>();
+  client.close();
+  return els;
+}
+
+/// Pedestrian ways downtown from OpenStreetMap, saved as node coordinates and
+/// way node lists (with the highway tag, so stairs stay identifiable).
+Future<void> _downloadStreets(String path) async {
+  final els = await _overpass(streetsQuery);
+  final nodes = <String, List<double>>{};
+  final ways = <Map<String, Object>>[];
+  for (final e in els) {
+    if (e['type'] == 'node') {
+      nodes['${e['id']}'] = [
+        double.parse((e['lat'] as num).toStringAsFixed(6)),
+        double.parse((e['lon'] as num).toStringAsFixed(6)),
+      ];
+    } else if (e['type'] == 'way') {
+      ways.add({
+        'id': e['id'] as int,
+        'nodes': (e['nodes'] as List).cast<int>(),
+        'highway': (e['tags'] as Map)['highway'] as String,
+      });
+    }
+  }
+  await File(path).writeAsString(jsonEncode({
+    'source': streetsSource,
+    'query': streetsQuery,
+    'retrieved': DateTime.now().toUtc().toIso8601String().substring(0, 10),
+    'nodes': nodes,
+    'ways': ways,
+  }));
+}
+
+/// assets/data/streets.json: the walkable graph for the outdoor leg of a
+/// route (sidewalk routing to a +15 door). Nodes are every OSM way node,
+/// edges are consecutive node pairs; only the largest connected component is
+/// kept, so every node can reach every other.
+void _emitStreets(String srcPath, String outPath) {
+  final j = jsonDecode(File(srcPath).readAsStringSync()) as Map<String, dynamic>;
+  final ll = (j['nodes'] as Map).cast<String, List>();
+  final ways = (j['ways'] as List).cast<Map>();
+  final edges = <(int, int)>{};
+  final stairs = <(int, int)>{};
+  final adj = <int, Set<int>>{};
+  for (final w in ways) {
+    final ids = (w['nodes'] as List).cast<int>().where((n) => ll.containsKey('$n')).toList();
+    for (var i = 1; i < ids.length; i++) {
+      final a = min(ids[i - 1], ids[i]), b = max(ids[i - 1], ids[i]);
+      if (a == b) continue;
+      edges.add((a, b));
+      if (w['highway'] == 'steps') stairs.add((a, b));
+      (adj[a] ??= {}).add(b);
+      (adj[b] ??= {}).add(a);
+    }
+  }
+  // Largest connected component.
+  final seen = <int>{};
+  var best = <int>{};
+  for (final s in adj.keys) {
+    if (seen.contains(s)) continue;
+    final comp = <int>{s};
+    final stack = [s];
+    seen.add(s);
+    while (stack.isNotEmpty) {
+      for (final v in adj[stack.removeLast()]!) {
+        if (seen.add(v)) {
+          comp.add(v);
+          stack.add(v);
+        }
+      }
+    }
+    if (comp.length > best.length) best = comp;
+  }
+  final ids = best.toList()..sort();
+  final index = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+  final kept = edges.where((e) => index.containsKey(e.$1) && index.containsKey(e.$2)).toList()
+    ..sort((x, y) => x.$1 != y.$1 ? x.$1.compareTo(y.$1) : x.$2.compareTo(y.$2));
+  File(outPath).writeAsStringSync(jsonEncode({
+    'source': streetsSource,
+    'retrieved': j['retrieved'],
+    'nodes': [for (final id in ids) ll['$id']],
+    'edges': [for (final e in kept) [index[e.$1], index[e.$2]]],
+    'stairs': [for (var i = 0; i < kept.length; i++) if (stairs.contains(kept[i])) i],
+  }));
+  stdout.writeln('streets: ${ids.length} nodes, ${kept.length} edges '
+      '(${adj.length - ids.length} nodes outside the main component dropped)');
 }
 
 // main() is defined in the build section below.
@@ -502,6 +610,10 @@ Future<void> main(List<String> args) async {
   if (args.contains('--refresh') || args.contains('--refresh-osm')) {
     await _downloadOsm('$src/osm_entrances.json');
   }
+  if (args.contains('--refresh') || args.contains('--refresh-streets')) {
+    await _downloadStreets('$src/osm_streets.json');
+  }
+  _emitStreets('$src/osm_streets.json', '$root/assets/data/streets.json');
   final (osmOutlines, osmEntrances) = _loadOsm('$src/osm_entrances.json');
   final cur =
       jsonDecode(File('$root/tool/curation.json').readAsStringSync()) as Map<String, dynamic>;
