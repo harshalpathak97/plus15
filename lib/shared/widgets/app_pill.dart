@@ -52,12 +52,15 @@ class AppPill extends StatelessWidget {
                       Icon(icon, size: 16, color: fg),
                       const SizedBox(width: 6),
                     ],
-                    Text(
-                      label,
-                      maxLines: 1,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: fg,
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: fg,
+                          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                        ),
                       ),
                     ),
                   ],

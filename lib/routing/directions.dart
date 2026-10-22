@@ -115,7 +115,8 @@ List<RouteStep> buildDirections(Plus15Network net, PlannedRoute route, RouteOrig
               segs.length > 1 && hops[segs[1].first].edge.isBridgeLike
                   ? nameAt(hops[segs[1].last].toNode)
                   : null)
-          : _approach(first.edge, b?.name ?? nameAt(first.toNode)),
+          : _approach(first.edge, b?.name ?? nameAt(first.toNode),
+              toDoor: route.isEntranceRoute),
       hopIndices: [0],
       distanceM: first.lengthM,
       buildingId: b?.id,
@@ -325,11 +326,16 @@ List<RouteStep> buildDirections(Plus15Network net, PlannedRoute route, RouteOrig
 
   final shared = dest.secondary || (net.regionById[dest.regionIds.firstOrNull]?.buildingIds.length ?? 0) > 1;
   final label = net.placeLabel(dest.regionIds.firstOrNull);
+  final door = route.isEntranceRoute ? net.nodeById[hops.last.toNode] : null;
   steps.add(RouteStep(
     kind: 'arrive',
-    text: shared && label.isNotEmpty && label != dest.name
-        ? 'Arrive at ${dest.name} (+15 level, in ${label.startsWith('The ') ? label : 'the $label'} concourse).'
-        : 'Arrive at ${dest.name} (+15 level).',
+    text: door != null
+        ? (door.isMappedDoor
+            ? 'Enter ${dest.name} by ${_the(door.label ?? 'the entrance')} and go up to the +15 level.'
+            : 'Enter ${dest.name} by its nearest public door and go up to the +15 level.')
+        : shared && label.isNotEmpty && label != dest.name
+            ? 'Arrive at ${dest.name} (+15 level, in ${label.startsWith('The ') ? label : 'the $label'} concourse).'
+            : 'Arrive at ${dest.name} (+15 level).',
     buildingId: dest.id,
     landmarks: landmarksOf(dest),
   ));
@@ -337,13 +343,16 @@ List<RouteStep> buildDirections(Plus15Network net, PlannedRoute route, RouteOrig
 }
 
 /// The GPS approach: outdoors to a street door, then up to the +15.
-String _approach(NetEdge e, String building) {
+String _approach(NetEdge e, String building, {bool toDoor = false}) {
   final via = e.via ?? building;
   final where = via == building
       ? '$building (use its nearest public door; door locations here aren\'t mapped)'
       : _the(via);
-  return 'From your location, walk about ${_roundM(e.lengthM)} outdoors to $where, '
-      'then go up to the +15 level.';
+  final how = e.sources.contains('osm_streets') ? 'along the street' : 'outdoors';
+  return toDoor
+      ? 'From your location, walk about ${_roundM(e.lengthM)} $how to $where.'
+      : 'From your location, walk about ${_roundM(e.lengthM)} $how to $where, '
+          'then go up to the +15 level.';
 }
 
 /// "the Bankers Hall entrance", but "The Bow entrance".

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:plus15_navigator/features/map/services/course_tracker.dart';
+import 'package:plus15_navigator/routing/router.dart';
 
 import 'routing/support.dart';
 
@@ -49,5 +50,25 @@ void main() {
     expect(p.offRouteM, 0);
     expect(p.remainingM, 0);
     expect(p.offRouteM.isFinite, isTrue);
+  });
+
+  group('nearest-entrance route (one outdoor hop to a door)', () {
+    final entrance = router
+        .nearestEntrances(const RouteOrigin.location(51.0440, -114.0620), at: clearDay)
+        .routes
+        .firstWhere((r) => r.lengthM > directWalkM); // a sidewalk walk, not a few steps
+    final eg = entrance.geometry;
+
+    test('progress runs from the fix along the sidewalk to the door, then arrives', () {
+      final t = CourseTracker(entrance);
+      expect(t.progressAt(LatLng(eg.first[0], eg.first[1])).traveledM, lessThan(1));
+      final mid = eg[eg.length ~/ 2];
+      final p = t.progressAt(LatLng(mid[0], mid[1]));
+      expect(p.offRouteM, lessThan(0.5));
+      expect(p.stepIndex, 0);
+      final end = t.progressAt(LatLng(eg.last[0], eg.last[1]));
+      expect(end.remainingM, lessThan(1));
+      expect(end.stepIndex, entrance.steps.length - 1);
+    });
   });
 }

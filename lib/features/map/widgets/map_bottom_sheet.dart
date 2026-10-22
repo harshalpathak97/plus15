@@ -9,6 +9,7 @@ import '../../../routing/network.dart';
 import '../../../data/models/shop.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/widgets/app_pill.dart';
+import '../../../shared/widgets/button_row.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/sheet_surface.dart';
 import '../../../routing/conditions.dart';
@@ -30,16 +31,19 @@ import 'building_tooltip.dart';
 ///   • otherwise (idle)               → search prompt + quick routes
 ///
 /// It is a passive renderer: navigation logic stays on the map screen and is
-/// invoked through [onStopNavigation] / [onStartQuickRoute].
+/// invoked through [onStopNavigation] / [onStartQuickRoute] / [onFindEntrance].
 class MapBottomSheet extends ConsumerStatefulWidget {
   final VoidCallback onStopNavigation;
   final void Function(String fromId, String toId, String mode)
       onStartQuickRoute;
+  /// "Find nearest +15 entrance" from the phone's location (also Retry).
+  final VoidCallback onFindEntrance;
 
   const MapBottomSheet({
     super.key,
     required this.onStopNavigation,
     required this.onStartQuickRoute,
+    required this.onFindEntrance,
   });
 
   @override
@@ -135,13 +139,18 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
 
     final buildingMap = {for (final b in buildings) b.id: b};
     final fromName = route.originBuildingId == null
-        ? 'My location'
+        ? (route.isEntranceRoute && (ref.watch(entranceOptionsProvider)?.manualStart ?? false)
+            ? 'the spot you chose'
+            : 'My location')
         : buildingMap[route.originBuildingId]?.name ?? route.originBuildingId!;
     final toName =
         buildingMap[route.destinationBuildingId]?.name ?? route.destinationBuildingId;
     // Asked for from a shop's page: name the shop, and the building it's in.
     final shop = ref.watch(routeToShopProvider);
-    final place = shop?.buildingId == route.destinationBuildingId ? shop!.name : null;
+    var place = shop?.buildingId == route.destinationBuildingId ? shop!.name : null;
+    // Nearest entrance: the door is the destination, named after its street.
+    final door = route.isEntranceRoute ? route.hops.single.edge.via : null;
+    if (door != null && door != toName) place = door;
     final distance = route.lengthM;
     final timeMin =
         AppConstants.estimateWalkTimeMinutes(distance, speedKmh: walkingSpeed);
@@ -149,6 +158,10 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
     return [
       _routeSummary(context, fromName, place ?? toName, distance, timeMin,
           route.bridgeCount, inBuilding: place == null ? null : toName),
+      if (route.isEntranceRoute && !session.isActive) ...[
+        const SizedBox(height: AppSpacing.md),
+        _entranceOptions(context, route),
+      ],
       if (route.previewOnly && !session.isActive) ...[
         const SizedBox(height: AppSpacing.md),
         PreviewBanner(route: route),
@@ -170,6 +183,90 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
           showDebug: ref.watch(debugGraphProvider)),
       if (ref.watch(debugGraphProvider)) RouteExplanation(route: route),
     ];
+  }
+
+  /// The other nearby doors from the same search, and Start / Retry.
+  Widget _entranceOptions(BuildContext context, PlannedRoute route) {
+    final theme = Theme.of(context);
+    final result = ref.watch(entranceOptionsProvider);
+    final routes = result?.routes ?? const <PlannedRoute>[];
+    final buildings = ref.watch(buildingsProvider).valueOrNull ?? const <NetBuilding>[];
+    final names = {for (final b in buildings) b.id: b.name};
+    String chipLabel(PlannedRoute r) {
+      final via = r.hops.single.edge.via ?? names[r.destinationBuildingId] ?? 'Entrance';
+      // "Calgary Tower entrance on 9 Avenue SE" → "Calgary Tower, 9 Ave SE".
+      final short = via
+          .replaceFirst(' entrance on ', ', ')
+          .replaceFirst(RegExp(r' entrance$'), '')
+          .replaceAll('Avenue', 'Ave')
+          .replaceAll('Street', 'St');
+      return '$short · ${r.lengthM.round()} m';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (routes.length > 1) ...[
+          Text('Nearest entrances by walking distance', style: theme.textTheme.labelLarge),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.sm,
+            children: [
+              for (final r in routes)
+                AppPill(
+                  label: chipLabel(r),
+                  selected: identical(r, route),
+                  icon: Icons.door_front_door_rounded,
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    ref.read(activeRouteProvider.notifier).state = r;
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        if ((result?.skipped ?? 0) > 0)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Text(
+                '${result!.skipped} nearer ${result.skipped == 1 ? 'door has' : 'doors have'} '
+                'no mapped street path from here.',
+                style: theme.textTheme.bodySmall),
+          ),
+        if (result?.approximate ?? false)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Text('Your spot is off the mapped street grid: distances are straight-line '
+                'estimates.',
+                style: theme.textTheme.bodySmall),
+          ),
+        ButtonRow(children: [
+          FilledButton.icon(
+            onPressed: route.previewOnly
+                ? null
+                : () {
+                    HapticFeedback.mediumImpact();
+                    ref.read(navigationSessionProvider.notifier).start(route: route);
+                  },
+            icon: const Icon(Icons.navigation_rounded),
+            label: const Text('Start'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              widget.onFindEntrance();
+            },
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Retry'),
+          ),
+        ]),
+        const SizedBox(height: AppSpacing.xs),
+        Text('Long-press the map to search from another spot.',
+            style: theme.textTheme.bodySmall, textAlign: TextAlign.center),
+      ],
+    );
   }
 
   Widget _routeSummary(BuildContext context, String from, String to,
@@ -337,6 +434,15 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
       Text('Calgary’s 16 km of heated skywalks, shops and food.',
           style: theme.textTheme.bodyMedium
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      const SizedBox(height: AppSpacing.md),
+      FilledButton.tonalIcon(
+        onPressed: () {
+          HapticFeedback.selectionClick();
+          widget.onFindEntrance();
+        },
+        icon: const Icon(Icons.door_front_door_rounded),
+        label: const Text('Find nearest +15 entrance'),
+      ),
       const SizedBox(height: AppSpacing.lg),
       _quickDestinations(context),
       const SizedBox(height: AppSpacing.xl),

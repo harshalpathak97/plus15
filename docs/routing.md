@@ -28,7 +28,9 @@ Everything in that table has been deleted and replaced.
 4. **[calgary.ca/plus15](https://www.calgary.ca/plus15).** Network hours, and the construction and closure table.
 5. **OpenStreetMap building entrances** (© OpenStreetMap contributors, ODbL), via Overpass. Street-level public doors (`entrance=main|yes|secondary`, not private, not `level=1` +15 doors) on the outline of the OSM building that contains each +15 building. Refresh with `dart run tool/build_network.dart --refresh-osm`.
 
-Snapshots of sources 1, 2, 4 and 5 are in `tool/sources/`. Hand-curated facts are in `tool/curation.json`, and every entry there cites its source.
+6. **OpenStreetMap pedestrian ways** (© OpenStreetMap contributors, ODbL), via Overpass: sidewalks, footways, crossings, steps, pedestrian streets and roads without `foot=no`/`access=private` between 51.033–51.060 N and 114.095–114.040 W. Built into `assets/data/streets.json` (one connected component, ~32k nodes) for the outdoor walk from a GPS fix to a +15 door. Refresh with `dart run tool/build_network.dart --refresh-streets`.
+
+Snapshots of sources 1, 2, 4, 5 and 6 are in `tool/sources/`. Hand-curated facts are in `tool/curation.json`, and every entry there cites its source.
 
 ## How the graph is built (`tool/build_network.dart`)
 
@@ -71,7 +73,11 @@ Snapshots of sources 1, 2, 4 and 5 are in `tool/sources/`. Hand-curated facts ar
   - While the network is closed, there is no route: the app shows when it opens and offers to plan for that time.
 - **GPS starts.**
   - A fix inside a building's City walkway polygon starts there, and a fix inside the destination's polygon means you've already arrived.
-  - Anywhere else, including under a bridge (usually street level), the route starts outdoors: a dotted straight-line walk to a street door, then up to the +15. Doors of every building within max(300 m, nearest door + 250 m) are candidates, and the search picks the one that makes the whole trip cheapest (outdoor metres ×2.5), which is the nearest door in your direction. For buildings without mapped doors, the point of the outline nearest you stands in. Beyond 3 km the app says how far away the +15 is and offers transit directions. The route screen links the walk to the door to the phone's maps app.
+  - Anywhere else, including under a bridge (usually street level), the route starts outdoors: a dotted walk along mapped sidewalks (`lib/routing/streets.dart`, one Dijkstra over the OpenStreetMap graph from the fix to every candidate door) to a street door, then up to the +15. Doors of every building within max(300 m, nearest door + 250 m) by air are candidates; the search prices each by its sidewalk distance (outdoor metres ×2.5) and picks the one that makes the whole trip cheapest. A door within 50 m by air is walked to directly (across the plaza you are on, not around the block via the nearest mapped sidewalk). A fix more than 60 m from any sidewalk, or a door with no sidewalk path, falls back to a straight line, which stays labelled as an estimate. For buildings without mapped doors, the point of the outline nearest you stands in. Beyond 3 km the app says how far away the +15 is and offers transit directions. The route screen links the walk to the door to the phone's maps app.
+- **Nearest entrance** (`Plus15Router.nearestEntrances`, the map's "Find nearest +15 entrance" button or a long-press on the map).
+  - Candidates are the 15 nearest doors by air; the result is ordered by sidewalk walking distance, never by the straight line. Doors whose +15 landing is a dead end under today's closures (every bridge of the building closed), closed buildings and closed street exits are excluded. Buildings sharing one OSM outline are listed once.
+  - Each result is a one-hop route ending at the street door, so the map, course tracking, re-routing (to the same door) and arrival work as for any route. Re-routing on the street leg tolerates 50 m off the line.
+  - Accessible applies the GPS-start rules above and avoids `highway=steps`. Estimated doors say so; a fix off the street grid says its distances are straight-line estimates. Inside a +15 walkway it says where you already are; beyond 3 km it says so.
 - **Accessibility.**
   - The Accessible profile excludes the official map's stairs-only links (bridges 1527 and 1522, into the Westin).
   - For GPS starts, it never goes up through a building the map marks "no elevator to street". A start or end at such a building gets a warning.
@@ -131,6 +137,7 @@ Every step lists the hops it covers, and the validator checks that the steps cov
   - same building, a shared concourse, adjacent buildings, opposite sides of The CORE
   - a cross-network trip
   - closure-day and reopened-day variants
+- **`test/routing/streets_test.dart`** checks the sidewalk graph (every door near a sidewalk, snapping, walks longer than the crow flies but not absurdly, stairs flagged and avoidable) and **`test/routing/nearest_entrance_test.dart`** the entrance ranking (walk order ≠ air order, closed hours, inside the +15, too far, off-grid fallback, Accessible exclusions, dead-end doors under closures, re-routing to the chosen door).
 - **`test/routing/conditions_test.dart`, `directions_test.dart`, `router_test.dart`, `test/course_tracker_test.dart`** cover hours, holidays, closures, accessibility, wording, weights and GPS progress.
 
 **Debug overlay.** Help → Routing debug overlay.
@@ -140,6 +147,7 @@ Every step lists the hops it covers, and the validator checks that the steps cov
 **Command line.**
 - `dart run tool/route.dart <from> <to> [profile] [ISO time] [--hops]` prints any route with its steps and costs.
 - From GPS coordinates: `dart run tool/route.dart 51.0453,-114.0688 the_bow`.
+- Nearest entrances: `dart run tool/route.dart 51.0440,-114.0620 nearest [profile] [time]`.
 
 ## Refreshing the data
 
@@ -159,7 +167,7 @@ Every step lists the hops it covers, and the validator checks that the steps cov
   - London House and 520 Fifth are on the official map but have no identifiable +15 entry in City data, so they aren't routable.
   - The Castell Building ↔ Bow Valley College South link is from the map only.
 - **Name changes.** Several buildings have been renamed since the City records were written (for example Devon Tower → 400 Third, Shell Centre → 400 4th, BP Centre → KPMG Tower, Sun Life Plaza → The Ampersand, Telus House → First Tower). The current names come from map v30, and the old names are kept as aliases, which search also matches.
-- **Outdoor transfers and GPS approaches** are straight-line estimates. They are always drawn dashed and labelled "not +15".
+- **Outdoor transfers** between the two +15 networks are straight-line estimates, and a GPS approach is one where the sidewalk graph doesn't cover the fix. They are always drawn dashed and labelled "not +15".
 - **Shops** have a building but no location inside it.
 - **Estimated reopenings.** After a City-estimated reopening date the bridge is routable again, with a "reopening not confirmed" warning for 60 days. Update `closures.json` when the City confirms.
 - **Long indoor detours.** When closures force a long indoor detour around a short street gap, the route stays indoors, because outdoor legs are only for missing +15 links. On closure days Life Plaza ↔ 736 Sixth is about 2.2 km indoors for a gap of about 100 m. An optional, clearly labelled "short outdoor shortcut" route would be the next step if that trade-off should be offered.

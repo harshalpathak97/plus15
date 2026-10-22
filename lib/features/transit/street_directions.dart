@@ -68,11 +68,10 @@ class WalkToEntranceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final h = route.hops.firstOrNull;
-    if (h == null || h.edge.kind != 'virtual' || h.edge.indoor || h.geometry.length < 3) {
-      return const SizedBox.shrink();
-    }
+    final door = route.doorPoint;
+    if (h == null || door == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    final door = h.geometry[1];
+    final onStreets = h.edge.sources.contains('osm_streets');
     final label = h.edge.via ?? 'the +15';
     final far = h.lengthM > 800;
     final metres = h.lengthM < 1000
@@ -92,14 +91,18 @@ class WalkToEntranceCard extends StatelessWidget {
               const Icon(Icons.door_front_door_rounded, color: AppPalette.warning),
               const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: Text('First, get to the +15', style: theme.textTheme.titleSmall),
+                child: Text(route.isEntranceRoute ? 'Walk to this entrance' : 'First, get to the +15',
+                    style: theme.textTheme.titleSmall),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.xs),
-          Text('$metres outdoors to ${label.startsWith('The ') ? label : 'the $label'}. '
-              'The dotted line on the map is a straight-line guide; your maps app has the '
-              'street-by-street way.',
+          Text(onStreets
+              ? '$metres along the street to ${label.startsWith('The ') ? label : 'the $label'}, '
+                  'following mapped sidewalks (OpenStreetMap). Your maps app can guide you too.'
+              : '$metres outdoors to ${label.startsWith('The ') ? label : 'the $label'}. '
+                  'The dotted line on the map is a straight-line guide; your maps app has the '
+                  'street-by-street way.',
               style: theme.textTheme.bodyMedium),
           const SizedBox(height: AppSpacing.md),
           Row(

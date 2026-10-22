@@ -2,13 +2,16 @@
 //
 //   dart run tool/route.dart <from> <to> [fastest|accessible|mostlyIndoors] [2026-10-15T12:00]
 //   dart run tool/route.dart 51.0453,-114.0690 the_bow
+//   dart run tool/route.dart 51.0453,-114.0690 nearest   # ranked +15 entrances
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:plus15_navigator/routing/conditions.dart';
+import 'package:plus15_navigator/routing/geo.dart';
 import 'package:plus15_navigator/routing/network.dart';
 import 'package:plus15_navigator/routing/route_validator.dart';
 import 'package:plus15_navigator/routing/router.dart';
+import 'package:plus15_navigator/routing/streets.dart';
 
 void main(List<String> args) {
   if (args.length < 2) {
@@ -22,7 +25,9 @@ void main(List<String> args) {
       .map((c) => Closure.fromJson(c as Map<String, dynamic>))
       .toList();
   final cond = Conditions(net, closures);
-  final router = Plus15Router(net, cond);
+  final streets = StreetGraph.fromJson(
+      jsonDecode(File('assets/data/streets.json').readAsStringSync()) as Map<String, dynamic>);
+  final router = Plus15Router(net, cond, streets: streets);
   final profile = RouteProfile.values.firstWhere(
       (p) => p.name.toLowerCase() == (args.length > 2 ? args[2] : 'fastest').toLowerCase());
   final at = args.length > 3 ? DateTime.parse(args[3]) : DateTime.now();
@@ -30,6 +35,29 @@ void main(List<String> args) {
   final origin = ll != null
       ? RouteOrigin.location(double.parse(ll[1]!), double.parse(ll[2]!))
       : RouteOrigin.building(args[0]);
+  if (args[1] == 'nearest') {
+    final e = router.nearestEntrances(origin, profile: profile, at: at);
+    if (!e.ok) {
+      stdout.writeln('UNAVAILABLE: ${e.unavailableReason}');
+      return;
+    }
+    stdout.writeln('${e.routes.length} entrances, ${e.skipped} nearer by air without a street '
+        'path${e.approximate ? ', STRAIGHT-LINE ESTIMATES' : ''}');
+    for (final r in e.routes) {
+      final door = r.hops.single.toNode;
+      stdout.writeln('- ${r.lengthM.round()} m walk to ${r.hops.single.edge.via} '
+          '($door, ${net.nodeById[door]!.isMappedDoor ? 'OSM door' : 'estimate'}, '
+          'air ${(project(origin.lat!, origin.lng!).dist(net.nodeById[door]!.at)).round()} m, '
+          'at ${r.doorPoint![0]},${r.doorPoint![1]})'
+          '${r.previewOnly ? ' [preview: opens ${r.opensAt}]' : ''}');
+      for (final w in [...r.notes, ...r.warnings]) {
+        stdout.writeln('    ! $w');
+      }
+      final problems = validateRoute(net, cond, r);
+      if (problems.isNotEmpty) stdout.writeln('    INVALID: ${problems.join('; ')}');
+    }
+    return;
+  }
   final res = router.route(origin, args[1], profile: profile, at: at);
   if (!res.ok) {
     stdout.writeln('UNAVAILABLE: ${res.unavailableReason}'

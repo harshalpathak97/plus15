@@ -14,16 +14,20 @@ void main() {
       final first = r.route!.hops.first;
       expect(first.edge.kind, 'virtual');
       expect(first.edge.indoor, isFalse);
-      // Drawn from the fix to the door, then up into the building.
+      // Drawn from the fix along the sidewalks to the door, then up into the
+      // building.
       expect(first.geometry.first, [51.0380, -114.0700]);
-      expect(first.geometry.length, 3);
+      expect(first.geometry.length, greaterThan(3));
+      expect(first.edge.sources, contains('osm_streets'));
       // The door chosen is among the nearest ones.
       final doors = router.approachDoors(o);
-      final door = first.geometry[1];
+      final door = r.route!.doorPoint!;
       final d = project(door[0], door[1]).dist(project(o.lat!, o.lng!));
       expect(d, lessThanOrEqualTo(doors.first.distanceM + 250));
+      // The street walk is longer than the crow flies, never shorter.
+      expect(first.lengthM, greaterThan(d));
       expect(r.route!.steps.first.kind, 'approach');
-      expect(r.route!.steps.first.text, contains('outdoors to'));
+      expect(r.route!.steps.first.text, contains('along the street to'));
     });
 
     test('mapped OpenStreetMap doors are walked to exactly', () {

@@ -6,6 +6,7 @@ import 'conditions.dart';
 import 'directions.dart';
 import 'geo.dart';
 import 'network.dart';
+import 'streets.dart';
 
 /// PlannedRoute profiles. Weights are explicit and tested (test/router_test.dart).
 enum RouteProfile {
@@ -21,6 +22,9 @@ enum RouteProfile {
 
 /// Furthest the app will walk you outdoors to reach the +15.
 const maxApproachM = 3000.0;
+/// Up to this far, the walk to a door is a straight line (across a plaza or
+/// the sidewalk you are on), not a trip via the nearest mapped sidewalk.
+const directWalkM = 50.0;
 
 /// A street door you can walk to from a GPS fix.
 class ApproachDoor {
@@ -100,6 +104,17 @@ class PlannedRoute {
   /// Can be browsed and previewed but not started as live navigation.
   bool get previewOnly => opensAt != null || throughClosures.isNotEmpty;
 
+  /// "Nearest +15 entrance": one outdoor walk that ends at a street door.
+  bool get isEntranceRoute =>
+      hops.length == 1 && hops.single.edge.id.startsWith('virtual:entrance:');
+
+  /// The street door this route walks to, when it has an outdoor start.
+  List<double>? get doorPoint {
+    final h = hops.firstOrNull;
+    if (h == null || h.edge.kind != 'virtual' || h.edge.indoor) return null;
+    return isEntranceRoute ? h.geometry.last : h.geometry[h.geometry.length - 2];
+  }
+
   double get lengthM => hops.fold(0.0, (s, h) => s + h.lengthM);
   double get cost => hops.fold(0.0, (s, h) => s + h.cost);
   int get bridgeCount =>
@@ -143,19 +158,218 @@ class RouteResult {
   bool get ok => route != null;
 }
 
+/// Ranked street doors into the +15 from a GPS fix.
+class EntranceResult {
+  /// Nearest first by walking distance; each is one outdoor hop to a door.
+  final List<PlannedRoute> routes;
+  /// Doors nearer by air that have no mapped street path from here.
+  final int skipped;
+  /// Straight-line distances: the fix is off the mapped street grid.
+  final bool approximate;
+  final String? unavailableReason;
+  final DateTime? nextOpen;
+  /// Set when the fix is already inside a +15 walkway.
+  final String? insideLabel;
+  /// The start was chosen on the map, not the phone's location.
+  final bool manualStart;
+  const EntranceResult(this.routes,
+      {this.skipped = 0,
+      this.approximate = false,
+      this.unavailableReason,
+      this.nextOpen,
+      this.insideLabel,
+      this.manualStart = false});
+  bool get ok => routes.isNotEmpty;
+
+  EntranceResult withManualStart() => EntranceResult(routes,
+      skipped: skipped,
+      approximate: approximate,
+      unavailableReason: unavailableReason,
+      nextOpen: nextOpen,
+      insideLabel: insideLabel,
+      manualStart: true);
+}
+
 class Plus15Router {
   final Plus15Network network;
   final Conditions conditions;
+  /// Sidewalk graph for the outdoor leg; without it, outdoor walks are
+  /// straight lines.
+  final StreetGraph? streets;
 
   /// Street node → the +15 node its street exit leads to.
   final Map<String, String> _entryOf;
+  /// Street node → its street exit edge (closable).
+  final Map<String, String> _exitEdgeOf;
 
-  Plus15Router(this.network, this.conditions)
+  Plus15Router(this.network, this.conditions, {this.streets})
       : _entryOf = {
           for (final e in network.edges)
             if (e.kind == 'street_exit')
               if (network.nodeById[e.to]?.level == 'street') e.to: e.from else e.from: e.to
+        },
+        _exitEdgeOf = {
+          for (final e in network.edges)
+            if (e.kind == 'street_exit')
+              if (network.nodeById[e.to]?.level == 'street') e.to: e.id else e.from: e.id
         };
+
+  /// The nearest street doors into the +15 from a GPS fix, ranked by the
+  /// walk along mapped sidewalks (straight line only as a labelled fallback).
+  /// Each result is a route with one outdoor hop ending at the door, so it
+  /// can be shown and navigated like any other. [doorNodeId] re-plans to a
+  /// door already chosen (re-routing).
+  EntranceResult nearestEntrances(
+    RouteOrigin origin, {
+    RouteProfile profile = RouteProfile.fastest,
+    required DateTime at,
+    int limit = 5,
+    String? doorNodeId,
+  }) {
+    final status = conditions.networkStatusAt(at);
+    if (!status.open && status.nextOpen == null) {
+      return EntranceResult(const [],
+          unavailableReason: 'The +15 network is closed (${status.label}).');
+    }
+    final opensAt = status.open ? null : status.nextOpen;
+    at = opensAt ?? at;
+    final region = regionAt(origin);
+    if (region != null) {
+      return EntranceResult(const [],
+          insideLabel: network.placeLabel(region.id),
+          unavailableReason: "You're already in the +15, in ${network.placeLabel(region.id)}.");
+    }
+    final accessible = profile == RouteProfile.accessible;
+    final closed = conditions.closedEdgesAt(at);
+    final elevatorsOut = conditions.elevatorOutagesAt(at);
+    final closedBuildings = {
+      for (final c in conditions.activeAt(at))
+        if (c.kind == 'building_closed') ...c.buildings
+    };
+    // A door is usable when its +15 landing still leads beyond the building;
+    // with every bridge of the building closed it is a dead end, not an entrance.
+    final comp = _components((e) => closed.containsKey(e.id) ||
+            e.confidence == 'unverified' ||
+            e.isStreet ||
+            (accessible && e.stairsRequired)
+        ? null
+        : e.lengthM);
+    final compSize = <int, int>{};
+    for (final c in comp.values) {
+      compSize[c] = (compSize[c] ?? 0) + 1;
+    }
+    bool usable(ApproachDoor d) {
+      if (closedBuildings.contains(d.building.id)) return false;
+      if (closed.containsKey(_exitEdgeOf[d.nodeId])) return false;
+      final c = comp[_entryOf[d.nodeId]];
+      return c != null && (compSize[c] ?? 0) > d.building.nodeIds.length;
+    }
+
+    var doors = approachDoors(origin, accessible: accessible, elevatorsOut: elevatorsOut)
+        .where((d) => usable(d) && (doorNodeId == null || d.nodeId == doorNodeId))
+        .toList();
+    if (doors.isEmpty) {
+      return EntranceResult(const [],
+          unavailableReason: accessible
+              ? 'No building within ${(maxApproachM / 1000).toStringAsFixed(0)} km has a '
+                  'confirmed step-free way up to the +15.'
+              : 'You are more than ${(maxApproachM / 1000).toStringAsFixed(0)} km from the +15 '
+                  'network. Take transit or drive downtown first.',
+          nextOpen: opensAt);
+    }
+    // Straight line only prefilters; the walk decides the order.
+    doors = doors.take(15).toList();
+    final walks = _streetWalks(origin, doors, accessible: accessible);
+    final routable = doors.where((d) => walks.containsKey(d.nodeId)).toList();
+    final approximate = routable.isEmpty;
+    final ranked = approximate ? doors : routable;
+    if (!approximate) {
+      ranked.sort((a, b) {
+        final c = walks[a.nodeId]!.lengthM.compareTo(walks[b.nodeId]!.lengthM);
+        return c != 0 ? c : a.distanceM.compareTo(b.distanceM);
+      });
+    }
+    final routes = <PlannedRoute>[];
+    final seenPoints = <String>{};
+    for (final d in ranked) {
+      if (routes.length >= limit) break;
+      // Buildings sharing an outline share the same estimated point: list it once.
+      if (!seenPoints.add('${d.lat.toStringAsFixed(5)},${d.lng.toStringAsFixed(5)}')) continue;
+      final walk = walks[d.nodeId];
+      final lengthM = walk?.lengthM ?? d.distanceM;
+      final edge = NetEdge(
+        id: 'virtual:entrance:${d.nodeId}',
+        from: 'origin',
+        to: d.nodeId,
+        kind: 'virtual',
+        buildingIds: [d.building.id],
+        lengthM: lengthM,
+        indoor: false,
+        confidence: 'estimate',
+        sources: ['gps', if (walk != null && !walk.direct) 'osm_streets'],
+        note: 'Outdoors to ${d.label}',
+        via: d.label,
+        geometry: [
+          [origin.lat!, origin.lng!],
+          ...?walk?.geometry,
+          [d.lat, d.lng],
+        ],
+      );
+      final notes = <String>[
+        if (walk == null)
+          'Street path not mapped here: the distance is a straight-line estimate.',
+        if (!d.mapped)
+          '${d.building.name}: its street doors aren\'t mapped, so this points at the '
+              'building. Use its nearest public door.',
+        if (walk?.stairs ?? false) 'The walk to this door uses outdoor steps.',
+      ];
+      routes.add(_finish(
+        [RouteHop(edge, 'origin', d.nodeId, edge.geometry, lengthM, 'street walk')],
+        origin,
+        d.building,
+        profile,
+        at,
+        false,
+        notes,
+        {d.nodeId},
+        {d.nodeId},
+        closed,
+        opensAt: opensAt,
+        closedLabel: status.label,
+      ));
+    }
+    // Doors nearer by air than the chosen one but with no street path.
+    final skipped = approximate
+        ? 0
+        : doors
+            .where((d) => d.distanceM < ranked.first.distanceM && !walks.containsKey(d.nodeId))
+            .length;
+    return EntranceResult(routes, skipped: skipped, approximate: approximate, nextOpen: opensAt);
+  }
+
+  /// Sidewalk walks from a fix to each door (by street node id). Empty when
+  /// there is no street graph or the fix is off it (inside a block or park).
+  Map<String, StreetWalk> _streetWalks(RouteOrigin o, List<ApproachDoor> doors,
+      {required bool accessible}) {
+    final g = streets;
+    if (g == null || doors.isEmpty) return const {};
+    final from = g.snap(project(o.lat!, o.lng!));
+    if (from == null) return const {};
+    final targets = <String, StreetSnap>{};
+    final out = <String, StreetWalk>{};
+    for (final d in doors) {
+      // A door a few steps away: walk straight to it. Snapping both ends to
+      // sidewalks would route around the block for a 5 m gap.
+      if (d.distanceM <= directWalkM) {
+        out[d.nodeId] = StreetWalk(d.distanceM, const [], false, direct: true);
+        continue;
+      }
+      final s = g.snap(project(d.lat, d.lng));
+      if (s != null) targets[d.nodeId] = s;
+    }
+    out.addAll(g.walks(from, targets, avoidStairs: accessible, maxM: maxApproachM * 1.5));
+    return out;
+  }
 
   /// The building a street exit edge belongs to.
   NetBuilding? streetExitBuilding(NetEdge e) =>
@@ -440,13 +654,18 @@ class Plus15Router {
     final doors = approachDoors(o, accessible: accessible, elevatorsOut: elevatorsOut);
     if (doors.isEmpty) return null;
     final nearest = doors.first.distanceM;
+    final near = doors.takeWhile((d) => d.distanceM <= max(300.0, nearest + 250)).toList();
+    // Along mapped sidewalks where the street graph covers the fix; a door
+    // with no street path keeps the straight line (drawn as an estimate).
+    final walks = _streetWalks(o, near, accessible: accessible);
     final out = <String, _Source>{};
-    for (final d in doors) {
-      if (d.distanceM > max(300.0, nearest + 250)) break;
+    for (final d in near) {
       final entry = network.nodeById[_entryOf[d.nodeId]];
       if (entry == null) continue;
+      final walk = walks[d.nodeId];
+      final walkM = walk?.lengthM ?? d.distanceM;
       final up = project(d.lat, d.lng).dist(entry.at) + 10; // + the level change
-      final price = d.distanceM * RouteWeights.streetTransferFactor +
+      final price = walkM * RouteWeights.streetTransferFactor +
           RouteWeights.streetExitPenaltyM + up;
       final prev = out[entry.id];
       if (prev != null && prev.cost <= price) continue;
@@ -456,13 +675,18 @@ class Plus15Router {
         to: entry.id,
         kind: 'virtual',
         buildingIds: [d.building.id],
-        lengthM: d.distanceM + up,
+        lengthM: walkM + up,
         indoor: false,
         confidence: 'estimate',
-        sources: const ['gps'],
+        sources: ['gps', if (walk != null && !walk.direct) 'osm_streets'],
         note: 'Outdoors to ${d.label}, then up to the +15 level',
         via: d.label,
-        geometry: [[o.lat!, o.lng!], [d.lat, d.lng], [entry.lat, entry.lng]],
+        geometry: [
+          [o.lat!, o.lng!],
+          ...?walk?.geometry,
+          [d.lat, d.lng],
+          [entry.lat, entry.lng],
+        ],
       ));
     }
     return out.isEmpty ? null : out;
@@ -476,7 +700,7 @@ class Plus15Router {
     final p = project(o.lat!, o.lng!);
     final out = <ApproachDoor>[];
     for (final b in network.buildings) {
-      if (!b.isRoutable || b.secondary || b.type == 'transit') continue;
+      if (!b.isRoutable) continue;
       if (accessible && (b.noElevatorToStreet || elevatorsOut.contains(b.id))) continue;
       for (final id in b.doors) {
         final n = network.nodeById[id];
