@@ -129,4 +129,23 @@ class LocalStorage {
     final box = Hive.box<dynamic>(_prefsBox);
     await box.put('onboardingComplete', value);
   }
+
+  /// Trips finished with Done or Save route on the arrival card.
+  int getArrivals() => Hive.box<dynamic>(_prefsBox).get('arrivals', defaultValue: 0) as int;
+
+  Future<void> setArrivals(int n) => Hive.box<dynamic>(_prefsBox).put('arrivals', n);
+
+  /// How many times, and when last, the Play rating prompt was requested.
+  int getReviewAsks() => Hive.box<dynamic>(_prefsBox).get('reviewAsks', defaultValue: 0) as int;
+
+  DateTime? getReviewAskedAt() {
+    final ms = Hive.box<dynamic>(_prefsBox).get('reviewAskedAt') as int?;
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> setReviewAsked(int count, DateTime at) async {
+    final box = Hive.box<dynamic>(_prefsBox);
+    await box.put('reviewAsks', count);
+    await box.put('reviewAskedAt', at.millisecondsSinceEpoch);
+  }
 }

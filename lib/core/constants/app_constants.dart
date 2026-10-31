@@ -7,6 +7,8 @@ class AppConstants {
   static const int animDurationMs = 300;
 
   static const String contactEmail = 'developer@harshalpathak.com';
+  static const String playStoreUrl =
+      'https://play.google.com/store/apps/details?id=com.plus15.plus15_navigator';
   static const String privacyUrl = 'https://harshalpathak97.github.io/plus15/privacy.html';
 
   static double estimateWalkTimeMinutes(double distanceM,
