@@ -25,6 +25,8 @@ const maxApproachM = 3000.0;
 /// Up to this far, the walk to a door is a straight line (across a plaza or
 /// the sidewalk you are on), not a trip via the nearest mapped sidewalk.
 const directWalkM = 50.0;
+/// Doors tried per end (you, the destination) when planning a maps-app handoff.
+const _handoffPool = 12;
 
 /// A street door you can walk to from a GPS fix.
 class ApproachDoor {
@@ -156,6 +158,25 @@ class RouteResult {
   const RouteResult.unavailable(String this.unavailableReason, {this.nextOpen, this.viaClosed})
       : route = null;
   bool get ok => route != null;
+}
+
+/// A door to reach with a maps app, and the +15 route from it to the destination.
+class HandoffPlan {
+  final ApproachDoor door;
+  final PlannedRoute indoor;
+  const HandoffPlan(this.door, this.indoor);
+
+  /// Straight line to the door stands in for the street leg (the maps app
+  /// plans the real one), plus the metres walked inside the +15.
+  double get score => door.distanceM + indoor.lengthM;
+}
+
+/// Entrances worth taking a maps app to, best first, one per building.
+class HandoffResult {
+  final List<HandoffPlan> plans;
+  final String? unavailableReason;
+  const HandoffResult(this.plans, [this.unavailableReason]);
+  bool get ok => plans.isNotEmpty;
 }
 
 /// Ranked street doors into the +15 from a GPS fix.
@@ -692,11 +713,62 @@ class Plus15Router {
     return out.isEmpty ? null : out;
   }
 
-  /// Street doors near a GPS fix, nearest first, within [maxApproachM].
-  /// Mapped OpenStreetMap doors are used as they are; for a building whose
-  /// doors aren't mapped, the point of its outline nearest you stands in.
+  /// For a fix too far from the +15 to walk to it: the entrances worth taking
+  /// a maps app to, each with the +15 route onward to [destinationId]. The
+  /// candidates are the doors nearest you and nearest the destination; the
+  /// best is the one with the shortest straight line plus indoor route.
+  HandoffResult planHandoff(
+    RouteOrigin origin,
+    String destinationId, {
+    RouteProfile profile = RouteProfile.fastest,
+    required DateTime at,
+    int limit = 3,
+  }) {
+    final dest = network.buildingById[destinationId];
+    if (dest == null || !origin.isLocation) {
+      return const HandoffResult([], 'Unknown destination.');
+    }
+    final accessible = profile == RouteProfile.accessible;
+    final out = conditions.elevatorOutagesAt(at);
+    List<ApproachDoor> doorsFrom(RouteOrigin o) => approachDoors(o,
+        accessible: accessible, elevatorsOut: out, maxM: double.infinity);
+    final fromYou = doorsFrom(origin);
+    final byNode = {for (final d in fromYou) d.nodeId: d};
+    final nearDest = doorsFrom(RouteOrigin.location(dest.lat, dest.lng));
+    final pool = {
+      for (final d in fromYou.take(_handoffPool)) d.nodeId,
+      for (final d in nearDest.take(_handoffPool)) d.nodeId,
+    };
+    final best = <String, HandoffPlan>{};
+    String? reason;
+    for (final id in pool) {
+      final d = byNode[id];
+      if (d == null) continue;
+      final r = route(RouteOrigin.building(d.building.id), destinationId,
+          profile: profile, at: at);
+      if (!r.ok) {
+        reason ??= r.unavailableReason;
+        continue;
+      }
+      final plan = HandoffPlan(d, r.route!);
+      final prev = best[d.building.id];
+      if (prev == null || plan.score < prev.score) best[d.building.id] = plan;
+    }
+    if (best.isEmpty) {
+      return HandoffResult(const [], reason ?? 'No +15 entrance leads to ${dest.name}.');
+    }
+    final plans = best.values.sorted((a, b) => a.score.compareTo(b.score));
+    return HandoffResult(plans.take(limit).toList());
+  }
+
+  /// Street doors near a GPS fix, nearest first, within [maxM] (default
+  /// [maxApproachM]). Mapped OpenStreetMap doors are used as they are; for a
+  /// building whose doors aren't mapped, the point of its outline nearest you
+  /// stands in.
   List<ApproachDoor> approachDoors(RouteOrigin o,
-      {bool accessible = false, Set<String> elevatorsOut = const {}}) {
+      {bool accessible = false,
+      Set<String> elevatorsOut = const {},
+      double maxM = maxApproachM}) {
     final p = project(o.lat!, o.lng!);
     final out = <ApproachDoor>[];
     for (final b in network.buildings) {
@@ -717,7 +789,7 @@ class Plus15Router {
           }
         }
         final d = at.dist(p);
-        if (d > maxApproachM) continue;
+        if (d > maxM) continue;
         final ll = unproject(at);
         out.add(ApproachDoor(b, id, ll[0], ll[1], d, label, n.isMappedDoor));
       }

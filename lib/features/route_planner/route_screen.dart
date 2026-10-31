@@ -18,6 +18,7 @@ import '../../shared/widgets/screen_header.dart';
 import '../ai/widgets/ai_concierge_sheet.dart';
 import '../ai/services/ai_service.dart' show aiConfigured;
 import '../transit/street_directions.dart';
+import 'widgets/handoff_card.dart';
 import 'widgets/route_option_card.dart';
 import 'widgets/step_list.dart';
 
@@ -49,6 +50,12 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
 
   /// Set when the user chose "Use my location" as the start.
   LatLng? _fromLocation;
+
+  /// Set instead of routes when the fix is too far to walk to the +15: a maps
+  /// app takes you to an entrance and the +15 route continues from there.
+  HandoffResult? _handoff;
+  int _handoffIndex = 0;
+  bool _handedOff = false;
 
   @override
   void initState() {
@@ -99,6 +106,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     ref.listen(routeFromMyLocationProvider, (_, mine) {
       if (mine && _fromLocation == null) _useMyLocationAsStart();
     });
+    ref.listen(locationStreamProvider, (_, fix) => _maybeTakeOver(fix.valueOrNull));
 
     final selected = _results == null || _results!.isEmpty ? null : _results![_selectedIndex];
 
@@ -197,7 +205,19 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                   StreetDirectionsRow(building: from ?? to),
                 ],
               ],
-              if (_results != null && _results!.isEmpty) _noRoute(theme),
+              if (_results != null && _results!.isEmpty && _handoff != null && to != null) ...[
+                const SizedBox(height: AppSpacing.xl),
+                HandoffCard(
+                  handoff: _handoff!,
+                  selected: _handoffIndex,
+                  destination: to.name,
+                  walkingSpeedKmh: walkingSpeed,
+                  onSelect: (i) => setState(() => _handoffIndex = i),
+                  onAtEntrance: _startFromEntrance,
+                  onPreview: () => _previewOnMap(_handoff!.plans[_handoffIndex].indoor),
+                ),
+              ] else if (_results != null && _results!.isEmpty)
+                _noRoute(theme),
             ],
           ),
         ),
@@ -516,9 +536,18 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     if (viaClosed != null && !options.any((o) => _sameRoute(o.route, viaClosed!))) {
       options.add(_Option(viaClosed, [preferred]));
     }
+    // Too far to walk to the +15: hand off to a maps app up to an entrance.
+    HandoffResult? handoff;
+    if (options.isEmpty && _fromLocation != null) {
+      final h = router.planHandoff(origin, to.id, profile: preferred, at: now);
+      if (h.ok) handoff = h;
+    }
     if (!mounted) return;
     setState(() {
       _busy = false;
+      _handoff = handoff;
+      _handoffIndex = 0;
+      _handedOff = false;
       _results = options;
       _unavailable = options.isEmpty ? unavailable.take(1).toList() : unavailable;
       _selectedIndex = 0;
@@ -536,22 +565,56 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
       };
 
   /// Shows a route on the map without starting navigation.
-  void _previewOnMap() {
-    if (_results == null || _results!.isEmpty) return;
+  void _previewOnMap([PlannedRoute? route]) {
+    route ??= _results == null || _results!.isEmpty ? null : _results![_selectedIndex].route;
+    if (route == null) return;
     HapticFeedback.selectionClick();
     ref.read(navigationSessionProvider.notifier).stop();
-    ref.read(activeRouteProvider.notifier).state = _results![_selectedIndex].route;
+    ref.read(activeRouteProvider.notifier).state = route;
     context.go('/map');
   }
 
-  void _startNavigation() {
-    if (_results == null || _results!.isEmpty) return;
+  void _startNavigation([PlannedRoute? route]) {
+    route ??= _results == null || _results!.isEmpty ? null : _results![_selectedIndex].route;
+    if (route == null) return;
     HapticFeedback.mediumImpact();
-    final selected = _results![_selectedIndex].route;
-    ref.read(activeRouteProvider.notifier).state = selected;
-    ref.read(navigationSessionProvider.notifier).start(route: selected);
+    ref.read(activeRouteProvider.notifier).state = route;
+    ref.read(navigationSessionProvider.notifier).start(route: route);
     context.go('/map');
   }
+
+  /// Once you're at the handoff entrance (tapped, or [_maybeTakeOver] sees you
+  /// there), the +15 route takes over. From your fix when it is by the door, so
+  /// the way in from the street is part of it; otherwise from the entrance.
+  Future<void> _startFromEntrance() async {
+    final h = _handoff, to = ref.read(routeToProvider);
+    if (h == null || to == null || _handedOff) return;
+    _handedOff = true;
+    final plan = h.plans[_handoffIndex];
+    final router = await ref.read(routerProvider.future);
+    final fix = ref.read(locationStreamProvider).valueOrNull;
+    PlannedRoute? route;
+    if (fix != null && _metresToDoor(plan, fix) <= 3 * handoffRadiusM) {
+      final profile = defaultProfile(ref.read(accessibilityModeProvider));
+      final r = router.route(RouteOrigin.location(fix.latitude, fix.longitude), to.id,
+          profile: profile, at: calgaryNow());
+      if (r.ok && !r.route!.previewOnly) route = r.route;
+    }
+    if (!mounted) return;
+    _startNavigation(route ?? plan.indoor);
+  }
+
+  void _maybeTakeOver(LatLng? fix) {
+    final h = _handoff;
+    if (h == null || fix == null || _handedOff) return;
+    final plan = h.plans[_handoffIndex];
+    if (!plan.indoor.previewOnly && _metresToDoor(plan, fix) <= handoffRadiusM) {
+      _startFromEntrance();
+    }
+  }
+
+  static double _metresToDoor(HandoffPlan plan, LatLng fix) => const Distance()
+      .as(LengthUnit.Meter, LatLng(plan.door.lat, plan.door.lng), fix);
 
   /// Start from the phone's location. Outside the +15 the route first walks
   /// you outdoors to the best nearby door.
