@@ -15,6 +15,7 @@ import '../../routing/network.dart';
 import '../../routing/router.dart';
 import '../../data/models/saved_route.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/services/review_prompt.dart';
 import 'services/course_tracker.dart';
 import 'widgets/map_bottom_sheet.dart';
 import 'basemap.dart';
@@ -1175,7 +1176,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                   child: FilledButton(
                     onPressed: () {
                       HapticFeedback.lightImpact();
-                      _stopNavigation();
+                      _finishArrival();
                     },
                     child: const Text('Done'),
                   ),
@@ -1189,6 +1190,12 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           .fadeIn(duration: AppMotion.normal)
           .slideY(begin: 0.3, end: 0, curve: Curves.easeOutCubic),
     );
+  }
+
+  /// Ends a finished trip, and counts it toward asking for a Play rating.
+  void _finishArrival() {
+    _stopNavigation();
+    countArrivalAndMaybeAsk(ref.read(localStorageProvider)).catchError((_) {});
   }
 
   void _saveArrival(NavigationSession session) {
@@ -1206,7 +1213,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
             content:
                 Text("This trip has no start building to save. Plan it in Navigate to save it.")));
       }
-      _stopNavigation();
+      _finishArrival();
       return;
     }
     final bMap = network?.buildingById ?? const {};
@@ -1228,7 +1235,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(content: Text('Saved to your routes.')));
     }
-    _stopNavigation();
+    _finishArrival();
   }
 
   Widget _buildMapControls(BuildContext context, AsyncValue<LatLng?> userLocation) {

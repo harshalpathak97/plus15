@@ -200,6 +200,10 @@ class HelpScreen extends ConsumerWidget {
             padding: EdgeInsets.zero,
             child: Column(
               children: [
+                _actionRow(context, Icons.star_outline_rounded, 'Rate Plus 15',
+                    'A rating on Google Play helps others find it.',
+                    () => openLink(context, AppConstants.playStoreUrl)),
+                const Divider(indent: 56),
                 _actionRow(context, Icons.privacy_tip_outlined, 'Privacy policy',
                     'What the app sends, and to whom.',
                     () => openLink(context, AppConstants.privacyUrl)),
