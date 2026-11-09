@@ -200,14 +200,18 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
           .replaceFirst(RegExp(r' entrance$'), '')
           .replaceAll('Avenue', 'Ave')
           .replaceAll('Street', 'St');
-      return '$short · ${r.lengthM.round()} m';
+      final d = r.lengthM < 1000
+          ? '${r.lengthM.round()} m'
+          : '${(r.lengthM / 1000).toStringAsFixed(1)} km';
+      return '$short · $d';
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (routes.length > 1) ...[
-          Text('Nearest entrances by walking distance', style: theme.textTheme.labelLarge),
+          Text(result!.far ? 'Nearest entrances' : 'Nearest entrances by walking distance',
+              style: theme.textTheme.labelLarge),
           const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: AppSpacing.xs,
@@ -233,6 +237,14 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
             child: Text(
                 '${result!.skipped} nearer ${result.skipped == 1 ? 'door has' : 'doors have'} '
                 'no mapped street path from here.',
+                style: theme.textTheme.bodySmall),
+          ),
+        if (result?.far ?? false)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Text('You’re too far from the +15 to walk there with Plus 15. Your maps app '
+                'can take you to an entrance; once you’re there, tap Find nearest +15 entrance '
+                'again or plan a route in Navigate.',
                 style: theme.textTheme.bodySmall),
           ),
         if (result?.approximate ?? false)
@@ -305,7 +317,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet> {
                 ),
               const SizedBox(height: 2),
               Text(
-                '${timeMin.ceil()} min · ${distance.round()} m · from $from',
+                '${timeMin.ceil()} min · ${distance < 1000 ? '${distance.round()} m' : '${(distance / 1000).toStringAsFixed(1)} km'} · from $from',
                 style: theme.textTheme.bodySmall
                     ?.copyWith(fontFeatures: AppTheme.tabular),
                 maxLines: 1,

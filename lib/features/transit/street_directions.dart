@@ -74,6 +74,8 @@ class WalkToEntranceCard extends StatelessWidget {
     final onStreets = h.edge.sources.contains('osm_streets');
     final label = h.edge.via ?? 'the +15';
     final far = h.lengthM > 800;
+    // Beyond walking range: any way there, picked in the maps app.
+    final tooFar = h.lengthM > maxApproachM;
     final metres = h.lengthM < 1000
         ? '${(h.lengthM / 10).round() * 10} m'
         : '${(h.lengthM / 1000).toStringAsFixed(1)} km';
@@ -91,13 +93,21 @@ class WalkToEntranceCard extends StatelessWidget {
               const Icon(Icons.door_front_door_rounded, color: AppPalette.warning),
               const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: Text(route.isEntranceRoute ? 'Walk to this entrance' : 'First, get to the +15',
+                child: Text(
+                    tooFar
+                        ? 'Get to this entrance'
+                        : route.isEntranceRoute
+                            ? 'Walk to this entrance'
+                            : 'First, get to the +15',
                     style: theme.textTheme.titleSmall),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.xs),
-          Text(onStreets
+          Text(tooFar
+              ? '$metres from you to ${label.startsWith('The ') ? label : 'the $label'} in a '
+                  'straight line. Take transit, drive or walk there with your maps app.'
+              : onStreets
               ? '$metres along the street to ${label.startsWith('The ') ? label : 'the $label'}, '
                   'following mapped sidewalks (OpenStreetMap). Your maps app can guide you too.'
               : '$metres outdoors to ${label.startsWith('The ') ? label : 'the $label'}. '
@@ -105,29 +115,41 @@ class WalkToEntranceCard extends StatelessWidget {
                   'street-by-street way.',
               style: theme.textTheme.bodyMedium),
           const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () =>
-                      openDirectionsTo(context, door[0], door[1], label, StreetMode.walking),
-                  icon: const Icon(Icons.directions_walk_rounded),
-                  label: const Text('Walk there'),
+          if (tooFar)
+            ButtonRow(children: [
+              for (final m in StreetMode.values)
+                OutlinedButton.icon(
+                  onPressed: () => openDirectionsTo(context, door[0], door[1], label, m),
+                  icon: Icon(m.icon, size: 18),
+                  label: Text(m.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8)),
                 ),
-              ),
-              if (far) ...[
-                const SizedBox(width: AppSpacing.sm),
+            ])
+          else
+            Row(
+              children: [
                 Expanded(
-                  child: OutlinedButton.icon(
+                  child: FilledButton.icon(
                     onPressed: () =>
-                        openDirectionsTo(context, door[0], door[1], label, StreetMode.transit),
-                    icon: const Icon(Icons.directions_transit_rounded),
-                    label: const Text('Transit'),
+                        openDirectionsTo(context, door[0], door[1], label, StreetMode.walking),
+                    icon: const Icon(Icons.directions_walk_rounded),
+                    label: const Text('Walk there'),
                   ),
                 ),
+                if (far) ...[
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () =>
+                          openDirectionsTo(context, door[0], door[1], label, StreetMode.transit),
+                      icon: const Icon(Icons.directions_transit_rounded),
+                      label: const Text('Transit'),
+                    ),
+                  ),
+                ],
               ],
-            ],
-          ),
+            ),
         ],
       ),
     );

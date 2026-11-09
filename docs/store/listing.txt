@@ -41,7 +41,7 @@ Independent app, not affiliated with The City of Calgary. Contains information l
 WHATS_NEW_1.0.3:
 Far from downtown? Plus 15 now takes you by Google Maps to the best +15 entrance, then guides you inside. Also: rate the app from the Help screen.
 WHATS_NEW_1.0.4:
-Ask +15 is back: ask about coffee, food or routes on the +15 and get answers with one-tap directions.
+Ask +15 is back: ask about coffee, food or routes on the +15 and get answers with one-tap directions. Far from downtown? Find nearest +15 entrance now shows the closest entrances and opens your maps app to get there.
 FR_CA_TITLE:
 Plus 15 : carte de Calgary
 FR_CA_SHORT:
