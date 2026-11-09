@@ -40,6 +40,8 @@ No account. No ads. No tracking.
 Independent app, not affiliated with The City of Calgary. Contains information licensed under the Open Government Licence – City of Calgary. Map data © OpenStreetMap contributors. Brand names and logos belong to their owners.
 WHATS_NEW_1.0.3:
 Far from downtown? Plus 15 now takes you by Google Maps to the best +15 entrance, then guides you inside. Also: rate the app from the Help screen.
+WHATS_NEW_1.0.4:
+Ask +15 is back: ask about coffee, food or routes on the +15 and get answers with one-tap directions.
 FR_CA_TITLE:
 Plus 15 : carte de Calgary
 FR_CA_SHORT:
