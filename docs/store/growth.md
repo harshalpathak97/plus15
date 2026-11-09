@@ -16,8 +16,8 @@ Rule from the r/googleplayconsole "17 installs a month" thread: if the listing c
 3. A landing page at harshalpathak97.github.io/plus15/ for Google web search.
 4. Local outreach (see `outreach.md`).
 
-**Status 2026-11-09:** the English listing text is saved in Play Console and the fr-CA listing is filled in, but it is not saved and nothing is sent for review yet. A person has to click Save, then Publishing overview → Send for review. The landing page is live.
+**Status 2026-11-09:** the English and fr-CA listing changes (4 changes) were sent to Google for review from Publishing overview. The landing page is live.
 
-**Found on the way:** live 1.0.3 (6) was built with `AI_PROXY_URL=http://10.0.2.2:8787/...` (the emulator's localhost), so Ask +15 is hidden for every user. 1.0.2 had the workers.dev URL. Build 1.0.4 with the `brisbane` or `store-assets` `secrets.json`.
+**Found on the way:** live 1.0.3 (6) was built with `AI_PROXY_URL=http://10.0.2.2:8787/...` (the emulator's localhost), so Ask +15 is hidden for every user. 1.0.2 had the workers.dev URL. Fixed in 1.0.4 (7), built 2026-11-09 and not yet uploaded (see `docs/releases.md`).
 
 **Next checks:** 2026-11-23 and 2026-12-07. Add a row each time with the same window length.
