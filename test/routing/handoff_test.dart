@@ -102,4 +102,21 @@ void main() {
       }
     });
   });
+
+  test('nearest entrance from a far fix lists the closest doors instead of failing', () {
+    const far = RouteOrigin.location(51.1250, -114.0700);
+    final e = router.nearestEntrances(far, at: clearDay);
+    expect(e.ok, isTrue, reason: e.unavailableReason);
+    expect(e.far, isTrue);
+    expect(e.approximate, isFalse);
+    final nearest = router.approachDoors(far, maxM: double.infinity).first.distanceM;
+    expect(e.routes.first.lengthM, closeTo(nearest, 1));
+    expect(e.routes.first.lengthM, greaterThan(maxApproachM));
+  });
+
+  test('a fix within walking range is not far', () {
+    final e = router.nearestEntrances(const RouteOrigin.location(51.0440, -114.0620), at: clearDay);
+    expect(e.ok, isTrue);
+    expect(e.far, isFalse);
+  });
 }

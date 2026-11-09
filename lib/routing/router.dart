@@ -193,13 +193,16 @@ class EntranceResult {
   final String? insideLabel;
   /// The start was chosen on the map, not the phone's location.
   final bool manualStart;
+  /// Further than [maxApproachM] from every door: get there by maps app.
+  final bool far;
   const EntranceResult(this.routes,
       {this.skipped = 0,
       this.approximate = false,
       this.unavailableReason,
       this.nextOpen,
       this.insideLabel,
-      this.manualStart = false});
+      this.manualStart = false,
+      this.far = false});
   bool get ok => routes.isNotEmpty;
 
   EntranceResult withManualStart() => EntranceResult(routes,
@@ -208,7 +211,8 @@ class EntranceResult {
       unavailableReason: unavailableReason,
       nextOpen: nextOpen,
       insideLabel: insideLabel,
-      manualStart: true);
+      manualStart: true,
+      far: far);
 }
 
 class Plus15Router {
@@ -286,21 +290,25 @@ class Plus15Router {
       return c != null && (compSize[c] ?? 0) > d.building.nodeIds.length;
     }
 
-    var doors = approachDoors(origin, accessible: accessible, elevatorsOut: elevatorsOut)
+    List<ApproachDoor> find(double maxM) => approachDoors(origin,
+            accessible: accessible, elevatorsOut: elevatorsOut, maxM: maxM)
         .where((d) => usable(d) && (doorNodeId == null || d.nodeId == doorNodeId))
         .toList();
+    var doors = find(maxApproachM);
+    // Too far to walk: still name the nearest doors; the maps app gets you there.
+    final far = doors.isEmpty;
+    if (far) doors = find(double.infinity);
     if (doors.isEmpty) {
       return EntranceResult(const [],
           unavailableReason: accessible
-              ? 'No building within ${(maxApproachM / 1000).toStringAsFixed(0)} km has a '
-                  'confirmed step-free way up to the +15.'
-              : 'You are more than ${(maxApproachM / 1000).toStringAsFixed(0)} km from the +15 '
-                  'network. Take transit or drive downtown first.',
+              ? 'No +15 building has a confirmed step-free way up from the street.'
+              : 'No open +15 entrance found.',
           nextOpen: opensAt);
     }
     // Straight line only prefilters; the walk decides the order.
     doors = doors.take(15).toList();
-    final walks = _streetWalks(origin, doors, accessible: accessible);
+    final walks =
+        far ? const <String, StreetWalk>{} : _streetWalks(origin, doors, accessible: accessible);
     final routable = doors.where((d) => walks.containsKey(d.nodeId)).toList();
     final approximate = routable.isEmpty;
     final ranked = approximate ? doors : routable;
@@ -337,7 +345,9 @@ class Plus15Router {
         ],
       );
       final notes = <String>[
-        if (walk == null)
+        if (far)
+          'Straight-line distance. Your maps app has the way there by transit, car or on foot.'
+        else if (walk == null)
           'Street path not mapped here: the distance is a straight-line estimate.',
         if (!d.mapped)
           '${d.building.name}: its street doors aren\'t mapped, so this points at the '
@@ -365,7 +375,8 @@ class Plus15Router {
         : doors
             .where((d) => d.distanceM < ranked.first.distanceM && !walks.containsKey(d.nodeId))
             .length;
-    return EntranceResult(routes, skipped: skipped, approximate: approximate, nextOpen: opensAt);
+    return EntranceResult(routes,
+        skipped: skipped, approximate: approximate && !far, nextOpen: opensAt, far: far);
   }
 
   /// Sidewalk walks from a fix to each door (by street node id). Empty when

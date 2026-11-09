@@ -81,11 +81,12 @@ void main() {
       expect(e.insideLabel, 'Bankers Hall');
     });
 
-    test('too far away: honest message, no guess', () {
+    test('too far to walk: the nearest doors, flagged far, for the maps app', () {
       final e = router.nearestEntrances(const RouteOrigin.location(51.0000, -114.0700),
           at: clearDay);
-      expect(e.ok, isFalse);
-      expect(e.unavailableReason, contains('km from the +15'));
+      expect(e.ok, isTrue);
+      expect(e.far, isTrue);
+      expect(e.routes.first.lengthM, greaterThan(maxApproachM));
     });
 
     test('off the mapped street grid: straight-line estimates, labelled', () {
