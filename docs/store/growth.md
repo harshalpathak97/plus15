@@ -20,4 +20,6 @@ Rule from the r/googleplayconsole "17 installs a month" thread: if the listing c
 
 **Found on the way:** live 1.0.3 (6) was built with `AI_PROXY_URL=http://10.0.2.2:8787/...` (the emulator's localhost), so Ask +15 is hidden for every user. 1.0.2 had the workers.dev URL. Fixed in 1.0.4 (7), built 2026-11-09 and not yet uploaded (see `docs/releases.md`).
 
+**2026-11-09, later:** preview video v4 fixes the mid-video glitch: frames 7.9–8.5 s flashed wrong-time footage because a tween outlived its cut, and parallel render workers disagreed on it. It's re-uploaded unlisted as https://www.youtube.com/watch?v=xxW7FkKi67I. Screenshots are now 7 Pixel 11 Pro shots (`make_store.py`), replacing the 8-shot set (which said "141 places").
+
 **Next checks:** 2026-11-23 and 2026-12-07. Add a row each time with the same window length.

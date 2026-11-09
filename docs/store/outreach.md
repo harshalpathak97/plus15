@@ -7,7 +7,7 @@ Afterwards, log what went out, and when, in `growth.md`.
 Links:
 - Play: https://play.google.com/store/apps/details?id=com.plus15.plus15_navigator
 - Site: https://harshalpathak97.github.io/plus15/
-- Video: https://youtu.be/sakjfEfKGIM
+- Video: https://www.youtube.com/watch?v=xxW7FkKi67I
 
 ---
 
@@ -64,7 +64,7 @@ Calgary, Avenue Calgary. Find the current tip addresses on each outlet's contact
 >
 > I'm happy to do a walk-through on a cold morning, from Bankers Hall to The Bow without a coat.
 >
-> 20-second preview: https://youtu.be/sakjfEfKGIM
+> 20-second preview: https://www.youtube.com/watch?v=xxW7FkKi67I
 > Screenshots and info: https://harshalpathak97.github.io/plus15/
 >
 > [Your name, phone]
